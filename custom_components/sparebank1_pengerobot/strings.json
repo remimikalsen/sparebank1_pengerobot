@@ -1,0 +1,115 @@
+{
+  "title": "Sparebank1 Pengerobot",
+    "config": {
+    "step": {
+      "integration_config": {
+        "title": "Configure Sparebank1 Integration",
+        "description": "Set up your integration preferences",
+        "data": {
+          "name": "Integration name",
+          "default_currency": "Default currency",
+          "max_amount": "Maximum transfer amount"
+        },
+        "data_description": {
+          "name": "Friendly name for this integration instance",
+          "default_currency": "Currency code (e.g., NOK, EUR)",
+          "max_amount": "Maximum amount for money transfers"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthentication required",
+        "description": "The Sparebank1 integration needs to re-authenticate your account. Continue to login."
+      },
+      "account_selection": {
+        "title": "Select Accounts to Track",
+        "description": "Choose which bank accounts you want to monitor. This helps reduce API calls and avoid rate limits. You found {account_count} accounts.",
+        "data": {
+          "selected_accounts": "Select accounts to track"
+        },
+        "data_description": {
+          "selected_accounts": "Choose one or more accounts to monitor for balances"
+        }
+      },
+      "reconfigure_confirm": {
+        "title": "Reconfigure Integration",
+        "description": "Reconfigure integration. This will allow you to change application credentials and selected accounts. Continue to reconfigure."
+      },
+      "pick_implementation_forced": {
+        "title": "Select SNN client credentials",
+        "description": "Choose which SNN client credentials to use for authentication. Need to create credentials? Visit https://developer.sparebank1.no/#/documentation/gettingstarted for setup instructions.",
+        "data": {
+          "create_new_credentials": "➕ Create new credentials…"
+        }
+      },
+      "pick_implementation_existing": {
+        "title": "Select existing credentials",
+        "description": "You have {count} sets of credentials configured. Choose which one to use. To add more credentials, go to Settings → Application Credentials and add new Sparebank1 credentials there first."
+      }
+    },
+    "abort": {
+      "reauth_successful": "Reauthentication successful",
+      "cannot_determine_unique_id": "Cannot determine a unique ID for your account",
+      "missing_auth_implementation": "Missing authentication implementation configuration",
+      "no_accounts_found": "No bank accounts found for your Sparebank1 credentials",
+      "accounts_fetch_failed": "Failed to fetch account information from Sparebank1",
+      "already_configured": "This combination of bank account and OAuth credentials is already configured as '{name}'. Use different credentials or reconfigure the existing integration.",
+      "create_credentials_first": "To add new OAuth credentials, first go to Settings → Application Credentials and add your Sparebank1 credentials there. Then restart this integration setup to use the new credentials.",
+      "no_application_credentials": "No OAuth credentials configured. Go to Settings → Application Credentials and add your Sparebank1 credentials first."
+    },
+    "error": {
+      "at_least_one_account": "You must select at least one account to track"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Sparebank1 Pengerobot Options",
+        "description": "Adjust your Sparebank1 integration settings.",
+        "data": {
+          "default_currency": "Default Currency",
+          "max_amount": "Maximum Transfer Amount",
+          "selected_accounts": "Select accounts to track"
+        }
+      }
+    }
+  },
+  "services": {
+    "transfer_money": {
+      "name": "Transfer Money",
+      "description": "Transfer money between bank accounts using Sparebank1.",
+      "fields": {
+        "from_account": {
+          "name": "From Account",
+          "description": "Norwegian account number to transfer money from (11 digits)."
+        },
+        "to_account": {
+          "name": "To Account",
+          "description": "Norwegian account number to transfer money to (11 digits)."
+        },
+        "amount": {
+          "name": "Amount",
+          "description": "Amount to transfer (limited by max_amount configuration)."
+        },
+        "currency": {
+          "name": "Currency",
+          "description": "Currency code (e.g., NOK, EUR, USD)."
+        },
+        "description": {
+          "name": "Description",
+          "description": "Description for the transfer."
+        },
+        "due_date": {
+          "name": "Due Date",
+          "description": "Due date for the transfer (date picker will validate format)."
+        },
+        "integration_id": {
+          "name": "Integration ID",
+          "description": "Specific integration instance to use (required if multiple instances)."
+        }
+      }
+    }
+  },
+  "application_credentials": {
+    "description": "Enter your Sparebank1 client credentials. You need to create an OAuth client at https://developer.sparebank1.no/#/documentation/gettingstarted first."
+  }
+}

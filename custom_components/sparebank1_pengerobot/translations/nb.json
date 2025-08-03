@@ -1,0 +1,111 @@
+{
+  "config": {
+    "step": {
+      "integration_config": {
+        "title": "Konfigurer Sparebank1-integrasjon",
+        "description": "Sett opp dine integrasjonsinnstillinger",
+        "data": {
+          "name": "Integrasjonsnavn",
+          "default_currency": "Standardvaluta",
+          "max_amount": "Maksimalt overføringsbeløp"
+        },
+        "data_description": {
+          "name": "Vennlig navn for denne integrasjonsinstansen",
+          "default_currency": "Valutakode (f.eks. NOK, EUR)",
+          "max_amount": "Maksimalt beløp for pengeoverføringer"
+        }
+      },
+      "account_selection": {
+        "title": "Velg kontoer å følge",
+        "description": "Velg hvilke bankkontoer du vil overvåke. Dette hjelper med å redusere API-kall og unngå hastighetsgrenser. Du fant {account_count} kontoer.",
+        "data": {
+          "selected_accounts": "Velg kontoer å følge"
+        },
+        "data_description": {
+          "selected_accounts": "Velg en eller flere kontoer å overvåke for saldoer"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Ny autentisering kreves",
+        "description": "Sparebank1-integrasjonen må autentisere kontoen din på nytt. Fortsett for å logge inn."
+      },
+      "reconfigure_confirm": {
+        "title": "Rekonfigurer integrasjon",
+        "description": "Rekonfigurer integrasjon. Dette lar deg endre applikasjonsoffentlige opplysninger og valgte kontoer. Fortsett for å rekonfigurere."
+      },
+      "pick_implementation_forced": {
+        "title": "Velg SNN-klient påloggingsopplysninger",
+        "description": "Velg hvilke SNN-klient påloggingsopplysninger som skal brukes for autentisering. Trenger du å opprette påloggingsopplysninger? Besøk https://developer.sparebank1.no/#/documentation/gettingstarted for instruksjoner.",
+        "data": {
+          "create_new_credentials": "➕ Opprett nye påloggingsopplysninger…"
+        }
+      },
+      "pick_implementation_existing": {
+        "title": "Velg eksisterende påloggingsopplysninger",
+        "description": "Du har {count} sett med påloggingsopplysninger konfigurert. Velg hvilke du vil bruke. For å legge til flere påloggingsopplysninger, gå til Innstillinger → Applikasjonspåloggingsopplysninger og legg til nye Sparebank1-påloggingsopplysninger der først."
+      }
+    },
+    "error": {
+      "at_least_one_account": "Du må velge minst én konto å følge"
+    },
+    "abort": {
+      "cannot_determine_unique_id": "Kunne ikke fastsette en unik identifikator for kontoen. Prøv igjen senere eller kontakt support.",
+      "missing_auth_implementation": "Mangler konfigurasjon for autentiseringsimplementering",
+      "reauth_successful": "Ny autentisering vellykket",
+      "no_accounts_found": "Ingen bankkontoer funnet for dine Sparebank1-opplysninger",
+      "accounts_fetch_failed": "Kunne ikke hente kontoinformasjon fra Sparebank1",
+      "already_configured": "Denne kombinasjonen av bankkonto og OAuth-påloggingsopplysninger er allerede konfigurert som '{name}'. Bruk andre påloggingsopplysninger eller rekonfigurer den eksisterende integrasjonen.",
+      "create_credentials_first": "For å legge til nye OAuth-påloggingsopplysninger, gå først til Innstillinger → Applikasjonspåloggingsopplysninger og legg til Sparebank1-påloggingsopplysningene dine der. Start deretter denne integrasjonsoppsettet på nytt for å bruke de nye påloggingsopplysningene.",
+      "no_application_credentials": "Ingen OAuth-påloggingsopplysninger konfigurert. Gå til Innstillinger → Applikasjonspåloggingsopplysninger og legg til Sparebank1-påloggingsopplysningene dine først."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Sparebank1 Pengerobot-innstillinger",
+        "description": "Juster innstillingene for Sparebank1-integrasjonen din.",
+        "data": {
+          "default_currency": "Standardvaluta",
+          "max_amount": "Maksimalt overføringsbeløp",
+          "selected_accounts": "Velg kontoer å følge"
+        }
+      }
+    }
+  },
+  "services": {
+    "transfer_money": {
+      "name": "Overfør penger",
+      "description": "Overfør penger mellom bankkontoer via Sparebank1.",
+      "fields": {
+        "from_account": {
+          "name": "Fra konto",
+          "description": "Norsk kontonummer det skal overføres fra (11 siffer)."
+        },
+        "to_account": {
+          "name": "Til konto",
+          "description": "Norsk kontonummer det skal overføres til (11 siffer)."
+        },
+        "amount": {
+          "name": "Beløp",
+          "description": "Beløpet som skal overføres (begrenset av max_amount-konfigurasjonen)."
+        },
+        "currency": {
+          "name": "Valuta",
+          "description": "Valutakode (f.eks. NOK, EUR, USD)."
+        },
+        "description": {
+          "name": "Beskrivelse",
+          "description": "Tekst som legges ved overføringen."
+        },
+        "due_date": {
+          "name": "Forfallsdato",
+          "description": "Dato for når overføringen skal utføres."
+        },
+        "integration_id": {
+          "name": "Integrasjons-ID",
+          "description": "Spesifikk instans som skal brukes (kreves hvis flere instanser er satt opp)."
+        }
+      }
+    }
+  }
+}

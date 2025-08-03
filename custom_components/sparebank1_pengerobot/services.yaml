@@ -1,0 +1,62 @@
+transfer_debit:
+  name: "Transfer Debit"
+  description: "Transfer money between bank accounts using Sparebank1 debit transfer"
+  fields:
+    device_id:
+      name: "Device"
+      description: "Sparebank1 device to use for the transfer"
+      required: true
+      selector:
+        device:
+          integration: sparebank1_pengerobot
+    from_account:
+      name: "From Account"
+      description: "Select the account to transfer money from"
+      required: true
+      selector:
+        entity:
+          integration: sparebank1_pengerobot
+          domain: sensor
+          device_class: monetary
+    to_account:
+      name: "To Account"
+      description: "Select the account to transfer money to"
+      required: true
+      selector:
+        entity:
+          integration: sparebank1_pengerobot
+          domain: sensor
+          device_class: monetary
+    amount:
+      name: "Amount"
+      description: "Amount to transfer (limited by max_amount configuration)"
+      required: true
+      example: "100.50"
+      selector:
+        text:
+    currency_code:
+      name: "Currency Code"
+      description: "Currency for the transfer (defaults to configured default currency)"
+      required: false
+      selector:
+        select:
+          options:
+            - "NOK"
+            - "EUR"
+            - "USD"
+            - "SEK"
+            - "DKK"
+            - "GBP"
+    description:
+      name: "Description"
+      description: "Description for the transfer"
+      required: false
+      selector:
+        text:
+    due_date:
+      name: "Due Date"
+      description: "Due date for the transfer (YYYY-MM-DD format)"
+      required: false
+      selector:
+        date:
+      data_type: date
