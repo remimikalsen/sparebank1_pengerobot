@@ -1,6 +1,6 @@
 """Constants for the Sparebank1 Pengerobot integration."""
 
-__version__ = "1.0.0"
+__version__ = "0.0.1"
 DOMAIN = "sparebank1_pengerobot"
 INTEGRATION_NAME = "Sparebank1 Pengerobot"
 MANUFACTURER = "@remimikalsen (https://github.com/remimikalsen)"
