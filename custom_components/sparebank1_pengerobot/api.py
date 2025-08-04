@@ -25,12 +25,23 @@ from .const import API_BASE_URL, TRANSFER_ENDPOINT, DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
-class Sparebank1AuthError(HomeAssistantError):
-    """Exception raised when authentication or token retrieval fails."""
-
-
 class Sparebank1APIError(HomeAssistantError):
     """Exception raised when the REST API returns an error."""
+    
+    def __init__(self, message: str, errors: list = None, http_code: int = None):
+        super().__init__(message)
+        self.errors = errors or []
+        self.http_code = http_code
+    
+    @property
+    def error_codes(self) -> list[str]:
+        """Get list of error codes from structured errors."""
+        return [error.get("code", "") for error in self.errors if isinstance(error, dict)]
+    
+    @property 
+    def trace_ids(self) -> list[str]:
+        """Get list of trace IDs from structured errors."""
+        return [error.get("traceId", "") for error in self.errors if isinstance(error, dict) and error.get("traceId")]
 
 
 class Sparebank1RateLimitError(Sparebank1APIError):
@@ -89,15 +100,50 @@ class Sparebank1Client:  # pragma: no cover – thin wrapper
         try:
             async with self.session.request(method, url, **kwargs) as resp:
                 if resp.status >= 400:
-                    error_text = await resp.text()
+                    # Try to parse structured error response first
+                    structured_errors = []
+                    error_text = ""
+                    
+                    try:
+                        error_json = await resp.json()
+                        if isinstance(error_json, dict) and "errors" in error_json:
+                            structured_errors = error_json["errors"]
+                        # Convert JSON back to text for fallback error message
+                        import json
+                        error_text = json.dumps(error_json)
+                    except Exception:
+                        # If JSON parsing fails, get raw text
+                        try:
+                            error_text = await resp.text()
+                        except Exception:
+                            error_text = "Unable to read error response"
+                    
                     # Check for rate limit error (429)
                     if resp.status == 429:
                         retry_after = resp.headers.get("Retry-After", "3600")  # Default to 1 hour
                         raise Sparebank1RateLimitError(
-                            f"Rate limit exceeded. Retry after {retry_after} seconds: {error_text}"
+                            f"Rate limit exceeded. Retry after {retry_after} seconds: {error_text}",
+                            errors=structured_errors,
+                            http_code=resp.status
                         )
+                    
+                    # Create descriptive error message
+                    if structured_errors:
+                        # Build error message from structured errors
+                        error_messages = []
+                        for error in structured_errors:
+                            if isinstance(error, dict):
+                                code = error.get("code", "unknown")
+                                message = error.get("message", "No message provided")
+                                error_messages.append(f"{code}: {message}")
+                        error_message = f"{method} {url} failed – HTTP {resp.status}: {'; '.join(error_messages)}"
+                    else:
+                        error_message = f"{method} {url} failed – HTTP {resp.status}: {error_text}"
+                    
                     raise Sparebank1APIError(
-                        f"{method} {url} failed – HTTP {resp.status}: {error_text}"
+                        error_message,
+                        errors=structured_errors,
+                        http_code=resp.status
                     )
                 return await resp.json()
         except aiohttp.ClientError as exc:

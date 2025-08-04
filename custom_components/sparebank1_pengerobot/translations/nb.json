@@ -11,8 +11,8 @@
         },
         "data_description": {
           "name": "Vennlig navn for denne integrasjonsinstansen",
-          "default_currency": "Valutakode (f.eks. NOK, EUR)",
-          "max_amount": "Maksimalt beløp for pengeoverføringer"
+          "default_currency": "Valutakode (f.eks. NOK, EUR). Valg av andre valutaer enn NOK kan medføre ekstra overføringskostnader.",
+          "max_amount": "Maksimalt beløp for pengeoverføringer i valgt valuta."
         }
       },
       "account_selection": {
@@ -68,6 +68,11 @@
           "default_currency": "Standardvaluta",
           "max_amount": "Maksimalt overføringsbeløp",
           "selected_accounts": "Velg kontoer å følge"
+        },
+        "data_description": {
+          "default_currency": "Valutakode (f.eks. NOK, EUR). Valg av andre valutaer enn NOK kan medføre ekstra overføringskostnader.",
+          "max_amount": "Maksimalt beløp for pengeoverføringer i valgt valuta.",
+          "selected_accounts": "Velg en eller flere kontoer å overvåke for saldoer"
         }
       }
     }
@@ -89,13 +94,13 @@
           "name": "Beløp",
           "description": "Beløpet som skal overføres (begrenset av max_amount-konfigurasjonen)."
         },
-        "currency": {
-          "name": "Valuta",
-          "description": "Valutakode (f.eks. NOK, EUR, USD)."
+        "currency_code": {
+          "name": "Valutakode",
+          "description": "Valutakode (f.eks. NOK, EUR, USD). Valg av andre valutaer enn NOK kan medføre ekstra overføringskostnader."
         },
-        "description": {
-          "name": "Beskrivelse",
-          "description": "Tekst som legges ved overføringen."
+        "message": {
+          "name": "Melding",
+          "description": "Melding som legges ved overføringen."
         },
         "due_date": {
           "name": "Forfallsdato",

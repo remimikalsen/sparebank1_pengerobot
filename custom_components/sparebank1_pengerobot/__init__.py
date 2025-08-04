@@ -19,7 +19,7 @@ from .const import (
     ATTR_AMOUNT,
     ATTR_FROM_ACCOUNT,
     ATTR_TO_ACCOUNT,
-    ATTR_DESCRIPTION,
+    ATTR_MESSAGE,
     ATTR_DUE_DATE,
     ATTR_DEVICE_ID,
     ATTR_CURRENCY_CODE,
@@ -40,7 +40,7 @@ from .utils import (
     validate_amount_with_currency_conversion,
 )
 from .coordinator import Sparebank1Coordinator
-from .api import Sparebank1AuthError, Sparebank1APIError
+from .api import Sparebank1APIError
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR]
@@ -101,7 +101,7 @@ def get_transfer_debit_schema(hass: HomeAssistant) -> vol.Schema:
             vol.Required(ATTR_TO_ACCOUNT): cv.entity_id,  # Entity selector
             vol.Required(ATTR_AMOUNT): validate_amount_service,
             vol.Optional(ATTR_CURRENCY_CODE): get_currency_selector(hass),
-            vol.Optional(ATTR_DESCRIPTION, default=""): cv.string,
+            vol.Optional(ATTR_MESSAGE, default=""): cv.string,
             vol.Optional(ATTR_DUE_DATE): cv.date,
         }
     )
@@ -138,7 +138,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         to_account_entity = call.data[ATTR_TO_ACCOUNT]
         amount_str = call.data[ATTR_AMOUNT]
 
-        description = call.data.get(ATTR_DESCRIPTION, "")
+        message = call.data.get(ATTR_MESSAGE, "")
         due_date = call.data.get(ATTR_DUE_DATE)
         if due_date:
             due_date = due_date.isoformat()  # Convert date object to YYYY-MM-DD string
@@ -241,7 +241,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 to_account=to_account,
                 amount=amount_decimal,
                 currency=currency,
-                description=description,
+                description=message,
                 due_date=due_date
             )
             
@@ -253,10 +253,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "amount": float(amount_decimal),  # Use the validated Decimal amount
                 "from_account": from_account,
                 "to_account": to_account,
-                "description": description,
+                "description": message,
                 "success": True,
                 "result": result,
             }
+            
+            # Add warnings and paymentId from API response if present
+            if isinstance(result, dict):
+                if "warnings" in result:
+                    event_data["warnings"] = result["warnings"]
+                if "paymentId" in result:
+                    event_data["payment_id"] = result["paymentId"]
             
             if due_date:
                 event_data["due_date"] = due_date
@@ -268,7 +275,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 amount_decimal, currency, from_account, to_account
             )
             
-        except (Sparebank1AuthError, Sparebank1APIError) as err:
+        except Sparebank1APIError as err:
             # Fire failure event
             event_data = {
                 "integration_id": coordinator.entry.entry_id,
@@ -277,10 +284,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "amount": float(amount_decimal),  # Use the validated Decimal amount
                 "from_account": from_account,
                 "to_account": to_account,
-                "description": description,
+                "description": message,
                 "success": False,
                 "failure_reason": str(err),
             }
+            
+            # Add detailed error information if available
+            if hasattr(err, 'http_code') and err.http_code:
+                event_data["http_code"] = err.http_code
+            if hasattr(err, 'errors') and err.errors:
+                event_data["errors"] = err.errors
+                event_data["error_codes"] = err.error_codes
+                if err.trace_ids:
+                    event_data["trace_ids"] = err.trace_ids
             
             if due_date:
                 event_data["due_date"] = due_date
@@ -299,7 +315,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "amount": float(amount_decimal),  # Use the validated Decimal amount
                 "from_account": from_account,
                 "to_account": to_account,
-                "description": description,
+                "description": message,
                 "success": False,
                 "failure_reason": f"Unexpected error: {err}",
             }

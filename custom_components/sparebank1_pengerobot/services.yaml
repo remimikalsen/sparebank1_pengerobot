@@ -36,7 +36,7 @@ transfer_debit:
         text:
     currency_code:
       name: "Currency Code"
-      description: "Currency for the transfer (defaults to configured default currency)"
+      description: "Currency for the transfer (defaults to configured default currency). Choosing other currencies than NOK may incur additional transfer costs."
       required: false
       selector:
         select:
@@ -47,9 +47,9 @@ transfer_debit:
             - "SEK"
             - "DKK"
             - "GBP"
-    description:
-      name: "Description"
-      description: "Description for the transfer"
+    message:
+      name: "Message"
+      description: "Message for the transfer"
       required: false
       selector:
         text:

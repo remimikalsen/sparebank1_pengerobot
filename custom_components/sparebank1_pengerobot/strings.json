@@ -12,8 +12,8 @@
         },
         "data_description": {
           "name": "Friendly name for this integration instance",
-          "default_currency": "Currency code (e.g., NOK, EUR)",
-          "max_amount": "Maximum amount for money transfers"
+          "default_currency": "Currency code (e.g., NOK, EUR). Choosing other currencies than NOK may incur additional transfer costs.",
+          "max_amount": "Maximum amount for money transfers in the default currency."
         }
       },
       "reauth_confirm": {
@@ -69,6 +69,11 @@
           "default_currency": "Default Currency",
           "max_amount": "Maximum Transfer Amount",
           "selected_accounts": "Select accounts to track"
+        },
+        "data_description": {
+          "default_currency": "Currency code (e.g., NOK, EUR). Choosing other currencies than NOK may incur additional transfer costs.",
+          "max_amount": "Maximum amount for money transfers in the default currency.",
+          "selected_accounts": "Choose one or more accounts to monitor for balances"
         }
       }
     }
@@ -90,13 +95,13 @@
           "name": "Amount",
           "description": "Amount to transfer (limited by max_amount configuration)."
         },
-        "currency": {
-          "name": "Currency",
-          "description": "Currency code (e.g., NOK, EUR, USD)."
+        "currency_code": {
+          "name": "Currency Code",
+          "description": "Currency code (e.g., NOK, EUR, USD). Choosing other currencies than NOK may incur additional transfer costs."
         },
-        "description": {
-          "name": "Description",
-          "description": "Description for the transfer."
+        "message": {
+          "name": "Message",
+          "description": "Message for the transfer."
         },
         "due_date": {
           "name": "Due Date",

@@ -8,7 +8,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_entry_oauth2_flow
 
-from .api import Sparebank1Client, Sparebank1AuthError, Sparebank1APIError, Sparebank1RateLimitError
+from .api import Sparebank1Client, Sparebank1APIError, Sparebank1RateLimitError
 from .const import DOMAIN, CONF_SELECTED_ACCOUNTS
 
 _LOGGER = logging.getLogger(__name__)
@@ -134,14 +134,6 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
                 "last_update": datetime.utcnow().isoformat(),
             }
             
-        except Sparebank1AuthError as auth_err:
-            _LOGGER.error("Authentication error: %s", auth_err)
-            # Increment backoff attempts and calculate next retry time
-            self._backoff_attempts += 1
-            backoff_seconds = min(2 ** self._backoff_attempts * 60, 3600)  # cap at 1 hour
-            self._backoff_until = datetime.utcnow() + timedelta(seconds=backoff_seconds)
-            _LOGGER.warning("Backing off for %s seconds (next attempt at %s)", backoff_seconds, self._backoff_until.isoformat())
-            raise UpdateFailed(f"Authentication failed: {auth_err}")
         except Sparebank1RateLimitError as rate_err:
             _LOGGER.error("Rate limit error: %s", rate_err)
             # Extract retry-after seconds from the error message, default to 1 hour
@@ -189,7 +181,7 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
             
             return result
             
-        except (Sparebank1AuthError, Sparebank1APIError, Sparebank1RateLimitError) as err:
+        except (Sparebank1APIError, Sparebank1RateLimitError) as err:
             _LOGGER.error("Transfer failed: %s", err)
             raise
         except Exception as err:

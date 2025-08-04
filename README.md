@@ -14,7 +14,7 @@ A Home Assistant integration that enables secure money transfers between your Sp
 - 💸 **Money Transfers** between your own accounts or to other accounts
 - 🔄 **Automatic Token Refresh** (365-day lifecycle)
 - 📊 **Account Monitoring** with hourly balance updates (select accounts strategically due to 60/hour API limit)
-- 🌍 **Multi-Currency Support** (NOK, EUR, USD, etc.)
+- 🌍 **Multi-Currency Support** (NOK, EUR, USD, etc.) - *Note: Non-NOK currencies may incur additional transfer costs*
 - 📅 **Scheduled Transfers** with due date support
 - 🔔 **Event Notifications** for automation integration
 - 📱 **Mobile Notifications** for transfer confirmations
@@ -64,8 +64,8 @@ Before installing this integration, you'll need to create an OAuth client with S
 In the first screen you choose per-instance options:
 
 - **Name** – friendly label shown in Home Assistant
-- **Default Currency** – default currency to move money with (NOK set as default)
-- **Maximum Amount** – maximum amount to transfer (enforced cross-currency in-service)
+- **Default Currency** – default currency to move money with (NOK set as default) - *Note: Choosing currencies other than NOK may incur additional transfer costs*
+- **Maximum Amount** – maximum amount to transfer in the default currency (enforced cross-currency in-service)
 
 Click **Next**.
 
@@ -119,14 +119,16 @@ Use the `sparebank1_pengerobot.transfer_debit` service to transfer money:
 ```yaml
 service: sparebank1_pengerobot.transfer_debit
 data:
-  device_id: "abc123def456"           # Device ID from integration
-  from_account: "sensor.account_1"    # From account sensor entity ID
-  to_account: "sensor.account_2"      # To account sensor entity ID  
-  amount: "500.00"                    # Amount to transfer (as string)
-  currency_code: "NOK"                # Currency (optional, uses default)
-  description: "Rent payment"         # Transfer description (optional)
+  device_id: "abc123def456"          # Device ID from integration
+  from_account: "sensor.account_1"   # From account sensor entity ID
+  to_account: "sensor.account_2"     # To account sensor entity ID  
+  amount: "500.00"                   # Amount to transfer (as string)
+  currency_code: "NOK"               # Currency (optional, uses default)
+  message: "Rent payment"            # Transfer description (optional)
   due_date: "2024-02-15"             # Schedule for later (optional)
 ```
+
+> ⚠️ **Currency Costs**: Choosing currencies other than NOK may incur additional transfer costs from your bank.
 
 > 💡 **Finding Entity IDs**: Go to **Developer Tools** → **States** and search for your account sensors, or use the entity picker in the service call UI.
 
@@ -148,10 +150,10 @@ automation:
         data:
           device_id: "abc123def456"  # Your integration device ID
           from_account: "sensor.checking_account"
-          to_account: "sensor.savings_account"
+          to_account: "sensor.bills_account"
           amount: "15000"
           currency_code: "NOK"
-          description: "Monthly rent - {{ now().strftime('%B %Y') }}"
+          message: "Monthly rent - {{ now().strftime('%B %Y') }}"
 ```
 
 ### In Automations - Conditional Transfer  
@@ -160,7 +162,7 @@ Transfer money based on sensor values or other conditions:
 
 ```yaml
 automation:
-  - alias: "Emergency Savings Transfer"
+  - alias: "Surplus Savings Transfer"
     trigger:
       - platform: numeric_state
         entity_id: sensor.main_account_balance
@@ -173,7 +175,7 @@ automation:
           to_account: "sensor.savings_account"
           amount: "{{ (states('sensor.main_account') | float - 45000) | round(0) }}"
           currency_code: "NOK"
-          description: "Automatic savings transfer"
+          message: "Automatic savings transfer"
 ```
 
 ## Event Notifications 🔔
@@ -259,6 +261,7 @@ automation:
 
 The `sparebank1_pengerobot_money_transferred` event contains:
 
+### Common Fields (Always Present)
 ```yaml
 integration_id: "abc123..."        # Integration instance ID
 name: "My Sparebank1 Account"     # Integration name
@@ -266,17 +269,35 @@ currency: "NOK"                   # Transfer currency
 amount: 500.0                     # Transfer amount
 from_account: "12345678901"       # Source account
 to_account: "10987654321"         # Destination account
-description: "Rent payment"       # Transfer description
+description: "Rent payment"       # Transfer description/message
 success: true                     # Transfer success/failure
 due_date: "2024-02-15"           # Due date (if scheduled)
+result: {...}                    # Full API response data
+```
 
-# Only present on failure:
-failure_reason: "Insufficient funds"  # Error message
+### Success-Only Fields
+```yaml
+# Present when transfer succeeds and API returns additional data:
+warnings: ["DUPLICATE_PAYMENT_EXISTS"]  # API warnings (if any)
+payment_id: "12345789012"              # Transaction ID from bank
+```
 
-# Only present on success:
-result:                          # API response data
-  transactionId: "TXN123456"
-  status: "completed"
+### Failure-Only Fields  
+```yaml
+# Present when transfer fails:
+failure_reason: "Insufficient funds"    # Human-readable error message
+http_code: 403                         # HTTP status code from API
+errors: [                              # Structured error details from API
+  {
+    "code": "insufficient_funds",
+    "message": "Account balance insufficient for transfer",
+    "traceId": "trace-abc123",
+    "httpCode": 403,
+    "resource": "account"
+  }
+]
+error_codes: ["insufficient_funds"]     # Extracted error codes
+trace_ids: ["trace-abc123"]            # API trace IDs for support
 ```
 
 ## Sensors 📊
@@ -303,75 +324,14 @@ condition:
 - **Manual Renewal**: When refresh tokens expire, you'll need to re-authorize (same process as initial setup)
 - **Secure Storage**: All tokens are encrypted in Home Assistant's configuration
 
-## Advanced Usage Examples 🚀
-
-### Smart Bill Payment Automation
-
-```yaml
-automation:
-  - alias: "Smart Electricity Bill Payment"
-    trigger:
-      - platform: state
-        entity_id: sensor.electricity_bill_amount
-    condition:
-      - condition: template
-        value_template: "{{ trigger.to_state.state | float > 0 }}"
-      - condition: time
-        after: "09:00:00"
-        before: "17:00:00"
-        weekday:
-          - mon
-          - tue
-          - wed
-          - thu
-          - fri
-    action:
-      - service: sparebank1_pengerobot.transfer_debit
-        data:
-          device_id: "abc123def456"
-          from_account: "sensor.checking_account"
-          to_account: "sensor.utility_account"
-          amount: "{{ states('sensor.electricity_bill_amount') }}"
-          description: "Electricity bill - {{ now().strftime('%B %Y') }}"
-          due_date: "{{ state_attr('sensor.electricity_bill', 'due_date') }}"
-```
-
-### Balance-Based Savings Transfer
-
-```yaml
-automation:
-  - alias: "Weekly Savings Transfer"
-    trigger:
-      - platform: time
-        at: "10:00:00"
-    condition:
-      - condition: time
-        weekday:
-          - fri
-      - condition: template
-        value_template: >
-          {{ state_attr('sensor.my_sparebank1_account_accounts', 'account_1_balance') | float > 10000 }}
-    action:
-      - service: sparebank1_pengerobot.transfer_debit
-        data:
-          device_id: "abc123def456"
-          from_account: "sensor.checking_account"
-          to_account: "sensor.savings_account"
-          amount: >
-            {% set balance = states('sensor.checking_account') | float %}
-            {% set save_amount = ((balance - 8000) * 0.1) | round(0) %}
-            {{ save_amount if save_amount > 0 else 0 }}
-          description: "Weekly automatic savings"
-```
 
 ## Multiple OAuth Clients 🔗
 
 This integration supports multiple OAuth clients and application credentials, enabling you to:
 
-- Connect multiple bank accounts from different Sparebank1 member banks
+- Get access to bank accounts from different Sparebank1 member banks
 - Separate access for different family members or purposes  
-- Use different OAuth applications for testing vs production
-- Maintain isolated configurations with different settings
+- Maintain isolated configurations with different settings for each client
 
 ### Setting Up Multiple OAuth Clients
 
@@ -425,7 +385,7 @@ data:
   from_account: "sensor.personal_checking"
   to_account: "sensor.personal_savings"
   amount: "1000"
-  description: "Personal savings transfer"
+  message: "Personal savings transfer"
 
 # Instance 2 - Business account
 service: sparebank1_pengerobot.transfer_debit  
@@ -434,7 +394,7 @@ data:
   from_account: "sensor.business_checking"
   to_account: "sensor.business_savings"
   amount: "5000"
-  description: "Business expense transfer"
+  message: "Business expense transfer"
 ```
 
 ### Finding Your Device IDs
@@ -445,13 +405,6 @@ data:
 4. The device ID is shown in the device information
 5. Or use **Developer Tools** → **Services** to see device options in the service call UI
 
-### Benefits of Multiple Instances
-
-- **Isolated Settings**: Each instance has its own currency defaults and transfer limits
-- **Separate Monitoring**: Account sensors are grouped by integration instance  
-- **Independent Authentication**: Each instance manages its own OAuth tokens
-- **Clear Organization**: Easy to identify which accounts belong to which purpose
-- **Service Flexibility**: Explicitly choose which integration to use for each transfer
 
 ### Managing Multiple Instances
 
@@ -461,7 +414,7 @@ data:
 
 **Troubleshooting**: Check logs and diagnostics for each instance separately if issues arise.
 
-**Rate Limiting with Multiple Instances**: Each OAuth client has its own 60 API calls/hour limit. However, be mindful of total account monitoring across all instances to avoid overwhelming your setup with API calls.
+**Rate Limiting with Multiple Instances**: Each OAuth client has its own 60 API calls/hour limit (from my understanding, but I might be wrong). Be mindful of total account monitoring across all instances to avoid overwhelming your setup with API calls. The integration wil automatically back off if it enters a state where it gets HTTP 429 back from the server.
 
 ## Troubleshooting 🔧
 
@@ -481,14 +434,14 @@ data:
 - Verify Sparebank1 API is accessible from your network
 
 **Transfer failures**
-- Check account numbers are correct and valid
 - Ensure sufficient funds in source account
 - Verify transfer limits with your bank
+- Verify that the from and to accounts both are accessible by the selected client/device.
 
 **"Rate limit exceeded" or API errors**
 - You may be monitoring too many accounts (limit: 60 API calls/hour)
 - Reduce monitored accounts: **Settings** → **Devices & Services** → **Configure** your integration
-- Each account polls hourly, so 10+ accounts can hit the limit
+- Each account polls hourly. Theoretically, you shoyld be able to follow 60 accounts, but do little more with no room to run transactions.
 - Consider monitoring only accounts you use for transfers/automation
 
 ### Enable Debug Logging
