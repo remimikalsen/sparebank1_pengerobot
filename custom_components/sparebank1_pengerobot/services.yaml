@@ -59,4 +59,3 @@ transfer_debit:
       required: false
       selector:
         date:
-      data_type: date

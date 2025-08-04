@@ -54,7 +54,7 @@
       "reauth_successful": "Ny autentisering vellykket",
       "no_accounts_found": "Ingen bankkontoer funnet for dine Sparebank1-opplysninger",
       "accounts_fetch_failed": "Kunne ikke hente kontoinformasjon fra Sparebank1",
-      "already_configured": "Denne kombinasjonen av bankkonto og OAuth-påloggingsopplysninger er allerede konfigurert som '{name}'. Bruk andre påloggingsopplysninger eller rekonfigurer den eksisterende integrasjonen.",
+      "already_configured": "Denne kombinasjonen av bankkonto og OAuth-påloggingsopplysninger er allerede konfigurert som \"{name}\". Bruk andre påloggingsopplysninger eller rekonfigurer den eksisterende integrasjonen.",
       "create_credentials_first": "For å legge til nye OAuth-påloggingsopplysninger, gå først til Innstillinger → Applikasjonspåloggingsopplysninger og legg til Sparebank1-påloggingsopplysningene dine der. Start deretter denne integrasjonsoppsettet på nytt for å bruke de nye påloggingsopplysningene.",
       "no_application_credentials": "Ingen OAuth-påloggingsopplysninger konfigurert. Gå til Innstillinger → Applikasjonspåloggingsopplysninger og legg til Sparebank1-påloggingsopplysningene dine først."
     }

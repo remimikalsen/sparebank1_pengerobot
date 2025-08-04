@@ -1,5 +1,4 @@
 {
-    "auth_mandatory": true,
     "domain": "sparebank1_pengerobot",
     "name": "Sparebank1 Pengerobot",
     "codeowners": ["@remimikalsen"],

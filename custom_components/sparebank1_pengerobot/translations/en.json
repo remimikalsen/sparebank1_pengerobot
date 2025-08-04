@@ -54,7 +54,7 @@
         "reauth_successful": "Reauthentication successful",
         "no_accounts_found": "No bank accounts found for your Sparebank1 credentials",
         "accounts_fetch_failed": "Failed to fetch account information from Sparebank1",
-        "already_configured": "This combination of bank account and OAuth credentials is already configured as '{name}'. Use different credentials or reconfigure the existing integration.",
+        "already_configured": "This combination of bank account and OAuth credentials is already configured as \"{name}\". Use different credentials or reconfigure the existing integration.",
         "create_credentials_first": "To add new OAuth credentials, first go to Settings → Application Credentials and add your Sparebank1 credentials there. Then restart this integration setup to use the new credentials.",
         "no_application_credentials": "No OAuth credentials configured. Go to Settings → Application Credentials and add your Sparebank1 credentials first."
       }
