@@ -97,6 +97,8 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
                 _LOGGER.debug("No account selection configured, using all %d accounts", len(accounts))
 
             # Attempt to enrich with balances (only for filtered accounts)
+            # This is truly non-fatal - we can still provide account info without balances
+            balance_fetch_errors = []
             try:
                 # Build list of account numbers we have to look up
                 account_numbers = [
@@ -105,20 +107,22 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
                     if "accountNumber" in acc
                 ]
                 
-                balances = await self.client.get_account_balances(account_numbers)
-                
-                for acc in accounts:
-                    acc_no = acc["accountNumber"]
-                    if acc_no not in balances:
-                        continue
-                    bal_resp = balances[acc_no]
-                    acc["balance"] = {
-                        "amount": bal_resp["accountBalance"],
-                        "currency": acc.get("currencyCode", "NOK"),
-                    }
+                if account_numbers:
+                    balances = await self.client.get_account_balances(account_numbers)
+                    
+                    for acc in accounts:
+                        acc_no = acc["accountNumber"]
+                        if acc_no not in balances:
+                            continue
+                        bal_resp = balances[acc_no]
+                        acc["balance"] = {
+                            "amount": bal_resp["accountBalance"],
+                            "currency": acc.get("currencyCode", "NOK"),
+                        }
             except Exception as err:  # noqa: BLE001 – non-fatal, we just log and continue
+                balance_fetch_errors.append(str(err))
                 _LOGGER.warning("Could not fetch account balances: %s", err)
-                # Sensors will fall back to 0 until next successful refresh
+                # Continue with account data without balances - this should not fail the entire update
 
             # Successful fetch – reset all backoff tracking and restore default interval
             if self._backoff_attempts or self._backoff_until or self._rate_limit_backoff_until:
@@ -129,10 +133,19 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
                 if self.update_interval != self._default_update_interval:
                     self.update_interval = self._default_update_interval
 
-            return {
+            data = {
                 "accounts": accounts,
                 "last_update": datetime.utcnow().isoformat(),
             }
+            
+            # Include balance fetch errors if any occurred
+            if balance_fetch_errors:
+                data["balance_fetch_errors"] = balance_fetch_errors
+                data["balance_fetch_partial"] = True
+            else:
+                data["balance_fetch_partial"] = False
+                
+            return data
             
         except Sparebank1RateLimitError as rate_err:
             _LOGGER.error("Rate limit error: %s", rate_err)

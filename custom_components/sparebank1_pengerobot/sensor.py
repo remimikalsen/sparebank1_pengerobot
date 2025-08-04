@@ -34,6 +34,24 @@ class BaseSparebank1Sensor(CoordinatorEntity, SensorEntity):
     @property
     def available(self):
         """Return if entity is available."""
+        # Allow showing stale data for up to 3 hours instead of immediately going unavailable
+        if self.coordinator.data is None:
+            return False
+            
+        # If we have data, check if it's not too stale
+        from datetime import datetime, timedelta
+        last_update_str = self.coordinator.data.get("last_update")
+        if last_update_str:
+            try:
+                last_update = datetime.fromisoformat(last_update_str.replace('Z', '+00:00'))
+                # Allow stale data for up to 3 hours (configurable)
+                max_staleness = timedelta(hours=3)
+                if datetime.utcnow() - last_update.replace(tzinfo=None) < max_staleness:
+                    return True
+            except (ValueError, TypeError):
+                pass
+        
+        # Fall back to coordinator success for truly old/missing data
         return self.coordinator.last_update_success
 
 
@@ -119,6 +137,15 @@ class Sparebank1AccountSensor(BaseSparebank1Sensor):
             "account_count": len(accounts),
             "last_update": last_update,
         }
+        
+        # Add information about partial balance fetches or errors
+        if self.coordinator.data.get("balance_fetch_partial"):
+            attributes["balance_fetch_status"] = "partial_failure"
+            balance_errors = self.coordinator.data.get("balance_fetch_errors", [])
+            if balance_errors:
+                attributes["balance_fetch_errors"] = balance_errors[:3]  # Limit to first 3 errors
+        else:
+            attributes["balance_fetch_status"] = "success"
         
         # Add account details (first 5 accounts to avoid overwhelming the state)
         for i, account in enumerate(accounts[:5]):
