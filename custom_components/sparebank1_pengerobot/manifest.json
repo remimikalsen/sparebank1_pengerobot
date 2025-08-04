@@ -5,7 +5,6 @@
     "config_flow": true,
     "dependencies": ["application_credentials"],
     "documentation": "https://github.com/remimikalsen/sparebank1_pengerobot",
-    "homeassistant": "2025.7.0",
     "iot_class": "cloud_polling",
     "issue_tracker": "https://github.com/remimikalsen/sparebank1_pengerobot/issues",
     "version": "1.0.0"
