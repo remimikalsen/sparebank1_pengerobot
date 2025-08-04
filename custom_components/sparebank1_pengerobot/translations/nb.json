@@ -35,9 +35,9 @@
       },
       "pick_implementation_forced": {
         "title": "Velg SNN-klient påloggingsopplysninger",
-        "description": "Velg hvilke SNN-klient påloggingsopplysninger som skal brukes for autentisering. Trenger du å opprette påloggingsopplysninger? Besøk https://developer.sparebank1.no/#/documentation/gettingstarted for instruksjoner.",
+        "description": "Du må legge til klientpåloggingsopplysninger i Home Assistant. Først må du besøke https://developer.sparebank1.no/#/documentation/gettingstarted for å få påloggingsopplysningene fra Sparebank1. Legg de deretter til her.",
         "data": {
-          "create_new_credentials": "➕ Opprett nye påloggingsopplysninger…"
+          "create_new_credentials": "➕ Legg til påloggingsopplysninger (vær tålmodig, det kan ta litt tid)…"
         }
       },
       "pick_implementation_existing": {

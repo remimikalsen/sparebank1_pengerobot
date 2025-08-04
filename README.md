@@ -36,13 +36,15 @@ Before installing this integration, you'll need to create an OAuth client with S
 
 ### Via HACS (Recommended)
 
+Note! After HACS 2.0 the process is slightly different, just go straight to the three dots in the upper right corner, paste the custom repo url and choose "integration", then skip to step 7 below. 
+
 1. Ensure you have [HACS](https://hacs.xyz/) installed in Home Assistant
 2. In HACS, go to **Integrations**
 3. Click the **⋮** menu → **Custom repositories**
 4. Add this repository URL: `https://github.com/remimikalsen/sparebank1_pengerobot`
 5. Select **Integration** as the category
 6. Click **Add**
-7. Find "Sparebank1 Pengerobot" in HACS and install it
+7. Find "Sparebank1 Pengerobot" in HACS list and install it / download it
 8. **Restart Home Assistant**
 
 ### Manual Installation
@@ -75,6 +77,8 @@ Click **Next**.
 - Home Assistant will show a **Create credentials** option
 - Choose a credential **Name** and paste your **Client ID** and **Client Secret**
 - Click **Create** and proceed to Step 4
+
+> ⚠️ **Important**: Opening the Application Credentials helper can be painfully slow. Just wait - and then wait a little more - and then some.
 
 **If you already have credentials configured:**
 - Select from existing credentials in the dropdown

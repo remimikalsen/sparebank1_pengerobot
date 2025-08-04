@@ -35,9 +35,9 @@
         },
         "pick_implementation_forced": {
           "title": "Select SNN client credentials",
-          "description": "Choose which SNN client credentials to use for authentication. Need to create credentials? Visit https://developer.sparebank1.no/#/documentation/gettingstarted for setup instructions.",
+          "description": "You need to add client credentials to Home Assistant. First, visit https://developer.sparebank1.no/#/documentation/gettingstarted to get the credentials from Sparebank1. Then add them here.",
           "data": {
-            "create_new_credentials": "➕ Create new credentials…"
+            "create_new_credentials": "➕ Add new credentials (be patient, it can take a while)…"
           }
         },
         "pick_implementation_existing": {
