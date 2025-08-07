@@ -15,6 +15,9 @@
             "max_amount": "Maximum amount for money transfers in the default currency."
           }
         },
+        "default_values": {
+          "name": "My accounts"
+        },
         "account_selection": {
           "title": "Select Accounts to Track",
           "description": "Choose which bank accounts you want to monitor. This helps reduce API calls and avoid rate limits. You found {account_count} accounts.",

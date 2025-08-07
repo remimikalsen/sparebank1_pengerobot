@@ -16,9 +16,10 @@ from homeassistant.helpers.config_entry_oauth2_flow import (
 )
 from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig, SelectOptionDict
 
+from homeassistant.helpers import config_entry_oauth2_flow
+from .api import Sparebank1Client
+
 from homeassistant.config_entries import SOURCE_REAUTH, SOURCE_RECONFIGURE
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from .const import API_BASE_URL
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.const import CONF_NAME
@@ -72,15 +73,11 @@ class Sparebank1OAuth2FlowHandler(AbstractOAuth2FlowHandler):
 
     def _impl_label(self, impl) -> str:
         """Create a readable, disambiguated label for an Application Credential."""
-        # implementation.name is often "configuration.yaml" for YAML-defined creds
-        name = getattr(impl, "name", "") or "Credentials"
-        if name.strip().lower() == "configuration.yaml":
-            name = "Client ID"
 
         # Append a short client_id suffix to distinguish multiple entries
         client_id = getattr(impl, "client_id", None)
         if isinstance(client_id, str) and len(client_id) >= 6:
-            name = f"{name} ({client_id[:6]}...)"
+            name = f"Client ID ({client_id[:6]}...)"
         return name
 
     async def async_step_pick_implementation_forced(
@@ -164,6 +161,15 @@ class Sparebank1OAuth2FlowHandler(AbstractOAuth2FlowHandler):
             # Now we have OAuth2 data and integration config, proceed to account selection
             return await self.async_step_account_selection()
 
+        # Get localized default name
+        translations = await async_get_translations(
+            self.hass, self.hass.config.language, "config", DOMAIN
+        )
+        default_name = translations.get(
+            "config.step.integration_config.default_values.name",
+            "My accounts"  # fallback if translation is missing
+        )
+
         # Create currency selector
         currency_options = [
             SelectOptionDict(value=currency, label=currency)
@@ -174,7 +180,7 @@ class Sparebank1OAuth2FlowHandler(AbstractOAuth2FlowHandler):
         schema = vol.Schema(
             {
                 vol.Optional(
-                    CONF_NAME, default="My accounts"
+                    CONF_NAME, default=default_name
                 ): str,
                 vol.Optional(
                     CONF_DEFAULT_CURRENCY, default=DEFAULT_CURRENCY
@@ -204,9 +210,39 @@ class Sparebank1OAuth2FlowHandler(AbstractOAuth2FlowHandler):
                 self._user_data[CONF_SELECTED_ACCOUNTS] = selected_accounts
                 return await self.async_oauth_create_entry(self._oauth_data)
 
-        # Fetch available accounts using the OAuth token
+        # Fetch available accounts using the API client
         try:
-            self._available_accounts = await self._fetch_accounts_for_selection(self._oauth_data)
+            # Get the auth implementation domain from OAuth data
+            auth_impl_domain = self._oauth_data.get("auth_implementation")
+            if not auth_impl_domain:
+                _LOGGER.error("No auth implementation found in OAuth data")
+                return self.async_abort(reason="accounts_fetch_failed")
+            
+            # Get the implementation using the domain
+            implementations = await async_get_implementations(self.hass, DOMAIN)
+            implementation = implementations.get(auth_impl_domain)
+            if not implementation:
+                _LOGGER.error("Could not find implementation for domain: %s", auth_impl_domain)
+                return self.async_abort(reason="accounts_fetch_failed")
+            
+            # Create a minimal mock entry for the OAuth session
+            from types import SimpleNamespace
+            mock_entry = SimpleNamespace()
+            # Put the token in the entry data where OAuth2Session expects it
+            token_data = self._oauth_data.get("token", self._oauth_data)
+            mock_entry.data = {
+                "auth_implementation": auth_impl_domain,
+                "token": token_data
+            }
+            mock_entry.entry_id = "temp_config_flow"
+            mock_entry.domain = DOMAIN
+            
+            # Create OAuth session using the found implementation
+            oauth_session = config_entry_oauth2_flow.OAuth2Session(self.hass, mock_entry, implementation)
+            
+            client = Sparebank1Client(self.hass, oauth_session)
+            self._available_accounts = await client.get_accounts()
+            
             if not self._available_accounts:
                 return self.async_abort(reason="no_accounts_found")
         except Exception as err:
@@ -258,57 +294,7 @@ class Sparebank1OAuth2FlowHandler(AbstractOAuth2FlowHandler):
             }
         )
 
-    async def _fetch_accounts_for_selection(self, token_data: Dict[str, Any]) -> list:
-        """Fetch accounts using the OAuth token for selection purposes."""
-        try:
-            # Extract access token from the token data structure
-            access_token = None
-            if "access_token" in token_data:
-                access_token = token_data["access_token"]
-            elif "token" in token_data and isinstance(token_data["token"], dict):
-                access_token = token_data["token"].get("access_token")
 
-            if not access_token:
-                _LOGGER.debug("No access token found for account fetching")
-                return []
-
-            # Fetch accounts
-            base_url = f"{API_BASE_URL}/personal/banking/accounts"
-            params = {
-                "includeNokAccounts": "true",
-                "includeCurrencyAccounts": "true",
-                "includeBsuAccounts": "true",
-                "includeCreditCardAccounts": "false",
-                "includeAskAccounts": "false",
-                "includePensionAccounts": "false"
-            }
-
-            session = async_get_clientsession(self.hass)
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/vnd.sparebank1.v1+json; charset=utf-8",
-            }
-            
-            async with session.get(base_url, headers=headers, params=params) as resp:
-                if resp.status != 200:
-                    response_text = await resp.text()
-                    _LOGGER.error("Failed to fetch accounts: HTTP %s - %s", resp.status, response_text)
-                    return []
-                
-                response_data = await resp.json()
-
-                # Extract accounts from the response structure
-                accounts = []
-                if isinstance(response_data, dict) and "accounts" in response_data:
-                    accounts = response_data["accounts"]
-                elif isinstance(response_data, list):
-                    accounts = response_data
-
-                return accounts
-
-        except Exception as err:
-            _LOGGER.error("Error fetching accounts for selection: %s", err)
-            return []
 
 
 
@@ -318,65 +304,43 @@ class Sparebank1OAuth2FlowHandler(AbstractOAuth2FlowHandler):
     async def _determine_unique_id(self, token_data: Dict[str, Any], auth_impl: str) -> str | None:  # noqa: C901
         """Return a unique ID based on the first account number; returns None on failure."""
         try:
-
-            
-            # Extract access token from the token data structure
-            # Home Assistant OAuth2 flow can return token in different formats
-            access_token = None
-            if "access_token" in token_data:
-                access_token = token_data["access_token"]
-
-            elif "token" in token_data and isinstance(token_data["token"], dict):
-                access_token = token_data["token"].get("access_token")
-
-            
-            if not access_token:
-                _LOGGER.debug("No access token found in token data. Available keys: %s", list(token_data.keys()))
+            # Use the API client to fetch accounts for unique ID determination
+            auth_impl_domain = token_data.get("auth_implementation")
+            if not auth_impl_domain:
+                _LOGGER.debug("No auth implementation found in token data for unique ID determination")
                 return None
             
-            # Build URL with query parameters to specify which account types to include
-            base_url = f"{API_BASE_URL}/personal/banking/accounts"
-            params = {
-                "includeNokAccounts": "true",
-                "includeCurrencyAccounts": "true", 
-                "includeBsuAccounts": "true",
-                "includeCreditCardAccounts": "false",
-                "includeAskAccounts": "false",
-                "includePensionAccounts": "false"
-            }
-
-            
-            session = async_get_clientsession(self.hass)
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/vnd.sparebank1.v1+json; charset=utf-8",
-            }
-            async with session.get(base_url, headers=headers, params=params) as resp:
-
-                if resp.status != 200:
-                    response_text = await resp.text()
-                    _LOGGER.debug("Unique-ID probe error response: %s", response_text)
-                    return None
-                response_data = await resp.json()
-
+            # Get the implementation using the domain
+            implementations = await async_get_implementations(self.hass, DOMAIN)
+            implementation = implementations.get(auth_impl_domain)
+            if not implementation:
+                _LOGGER.debug("Could not find implementation for domain: %s", auth_impl_domain)
+                return None
                 
-                # Extract accounts from the response structure
-                accounts = []
-                if isinstance(response_data, dict) and "accounts" in response_data:
-                    accounts = response_data["accounts"]
-                elif isinstance(response_data, list):
-                    accounts = response_data
-                    
+            from types import SimpleNamespace
+            mock_entry = SimpleNamespace()
+            # Put the token in the entry data where OAuth2Session expects it
+            token_dict = token_data.get("token", token_data)
+            mock_entry.data = {
+                "auth_implementation": auth_impl_domain,
+                "token": token_dict
+            }
+            mock_entry.entry_id = "temp_unique_id_determination"
+            mock_entry.domain = DOMAIN
+            
+            # Use the found implementation
+            oauth_session = config_entry_oauth2_flow.OAuth2Session(self.hass, mock_entry, implementation)
+            
+            client = Sparebank1Client(self.hass, oauth_session)
+            accounts = await client.get_accounts()
+            
+            if isinstance(accounts, list) and accounts:
+                account_number = accounts[0].get("accountNumber")
+                return str(account_number) if account_number else None
 
         except Exception as err:  # broad – fallback to no unique_id
             _LOGGER.debug("Could not determine unique ID: %s", err)
             return None
-
-        if isinstance(accounts, list) and accounts:
-            account_number = accounts[0].get("accountNumber")
-
-            return str(account_number) if account_number else None
-        
 
         return None
 
@@ -458,7 +422,9 @@ class Sparebank1OAuth2FlowHandler(AbstractOAuth2FlowHandler):
         #   entry.data["auth_implementation"] -> implementation domain
         # plus our instance-specific settings from self._user_data
         # -----------------------------------------------------------------
+        # TODO: This is a hack to get the token dict and auth_implementation from the data
         if "token" in data:
+            _LOGGER.debug("Token found in data 1: %s", data["token"])
             token_dict = data["token"]
             auth_impl = data.get("auth_implementation")
         else:
@@ -466,13 +432,16 @@ class Sparebank1OAuth2FlowHandler(AbstractOAuth2FlowHandler):
             # raw token dict at the top level. Detect that and wrap it.
             token_keys = {"access_token", "refresh_token", "expires_in", "expires_at"}
             if token_keys.intersection(data.keys()):
+                _LOGGER.debug("Token keys found in data 2: %s", token_keys.intersection(data.keys()))
                 token_dict = {k: v for k, v in data.items() if k in token_keys or k == "token_type"}
                 auth_impl = data.get("auth_implementation")
             else:
+                _LOGGER.debug("Token keys not found in data 3: %s", data.keys())
                 token_dict = {}
                 auth_impl = data.get("auth_implementation")
 
         if not auth_impl and hasattr(self, "implementation") and self.implementation:
+            _LOGGER.debug("WAIT!!! Auth implementation found in self.implementation: %s", self.implementation)
             auth_impl = self.implementation.domain
 
         entry_data = {
@@ -555,12 +524,18 @@ class Sparebank1OptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input: Dict[str, Any] | None = None) -> FlowResult:  # noqa: D401
         """Handle the initial options step."""
         if user_input is not None:
-            # Check if account selection changed, if so proceed to account selection step
-            if CONF_SELECTED_ACCOUNTS in user_input:
-                return self.async_create_entry(title="", data=user_input)
-            else:
-                # No account selection changes, just update other options
-                return self.async_create_entry(title="", data=user_input)
+            # Check if account selection changed to determine if we need to reload
+            current_accounts = self.config_entry.options.get(CONF_SELECTED_ACCOUNTS, self.config_entry.data.get(CONF_SELECTED_ACCOUNTS, []))
+            new_accounts = user_input.get(CONF_SELECTED_ACCOUNTS, current_accounts)
+            
+            # If account selection changed, we need to reload the integration to create/remove sensors
+            accounts_changed = set(current_accounts) != set(new_accounts)
+            
+            if accounts_changed:
+                _LOGGER.debug("Account selection changed from %s to %s, will trigger reload", current_accounts, new_accounts)
+            
+            # Create the options entry (this will trigger the update listener which reloads the integration)
+            return self.async_create_entry(title="", data=user_input)
 
         options = self.config_entry.options
         data = self.config_entry.data
@@ -575,7 +550,13 @@ class Sparebank1OptionsFlow(config_entries.OptionsFlow):
         # Try to fetch current accounts for selection
         account_selector = None
         try:
-            self._available_accounts = await self._fetch_accounts_for_options()
+            # Use the same approach as the config flow but with the existing config entry
+            implementation = await config_entry_oauth2_flow.async_get_config_entry_implementation(self.hass, self.config_entry)
+            oauth_session = config_entry_oauth2_flow.OAuth2Session(self.hass, self.config_entry, implementation)
+            
+            client = Sparebank1Client(self.hass, oauth_session)
+            self._available_accounts = await client.get_accounts()
+            
             if self._available_accounts:
                 account_options = []
                 for account in self._available_accounts:
@@ -636,61 +617,7 @@ class Sparebank1OptionsFlow(config_entries.OptionsFlow):
         schema = vol.Schema(schema_fields)
         return self.async_show_form(step_id="init", data_schema=schema)
 
-    async def _fetch_accounts_for_options(self) -> list:
-        """Fetch accounts for the options flow."""
-        try:
-            # Get the coordinator to fetch accounts
-            from homeassistant.helpers import config_entry_oauth2_flow
-            
-            implementation = await config_entry_oauth2_flow.async_get_config_entry_implementation(
-                self.hass, self.config_entry
-            )
-            oauth_session = config_entry_oauth2_flow.OAuth2Session(
-                self.hass, self.config_entry, implementation
-            )
-            
-            # Ensure we have a valid token
-            token_dict = await oauth_session.async_ensure_token_valid()
-            if token_dict is None:
-                token_dict = oauth_session.token
-            
-            access_token = token_dict["access_token"]
 
-            # Fetch accounts
-            base_url = f"{API_BASE_URL}/personal/banking/accounts"
-            params = {
-                "includeNokAccounts": "true",
-                "includeCurrencyAccounts": "true",
-                "includeBsuAccounts": "true",
-                "includeCreditCardAccounts": "false",
-                "includeAskAccounts": "false",
-                "includePensionAccounts": "false"
-            }
-
-            session = async_get_clientsession(self.hass)
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/vnd.sparebank1.v1+json; charset=utf-8",
-            }
-            
-            async with session.get(base_url, headers=headers, params=params) as resp:
-                if resp.status != 200:
-                    return []
-                
-                response_data = await resp.json()
-
-                # Extract accounts from the response structure
-                accounts = []
-                if isinstance(response_data, dict) and "accounts" in response_data:
-                    accounts = response_data["accounts"]
-                elif isinstance(response_data, list):
-                    accounts = response_data
-
-                return accounts
-
-        except Exception as err:
-            _LOGGER.error("Error fetching accounts for options: %s", err)
-            return []
 
     @staticmethod
     async def async_migrate_entry(hass, config_entry):

@@ -15,6 +15,9 @@
           "max_amount": "Maksimalt beløp for pengeoverføringer i valgt valuta."
         }
       },
+      "default_values": {
+        "name": "Mine kontoer"
+      },
       "account_selection": {
         "title": "Velg kontoer å følge",
         "description": "Velg hvilke bankkontoer du vil overvåke. Dette hjelper med å redusere API-kall og unngå hastighetsgrenser. Du fant {account_count} kontoer.",

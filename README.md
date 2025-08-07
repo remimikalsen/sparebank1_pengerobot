@@ -6,14 +6,14 @@
 
 # Sparebank1 Pengerobot 🏦💸
 
-A Home Assistant integration that enables secure money transfers between your Sparebank1 accounts using OAuth 2.0 and BankID authentication.
+A Home Assistant integration that enables secure money transfers between your own Sparebank1 accounts. It uses OAuth 2.0 and BankID for authentication and of course encrypted communication with the bank APIs.
 
 ## Features ✨
 
 - 🔐 **Secure OAuth 2.0 Authentication** with Norwegian BankID
-- 💸 **Money Transfers** between your own accounts or to other accounts
+- 💸 **Money Transfers** between your own accounts
 - 🔄 **Automatic Token Refresh** (365-day lifecycle)
-- 📊 **Account Monitoring** with hourly balance updates (select accounts strategically due to 60/hour API limit)
+- 📊 **Account Monitoring** with hourly balance updates (select accounts wisely due to 60/hour API limit)
 - 🌍 **Multi-Currency Support** (NOK, EUR, USD, etc.) - *Note: Non-NOK currencies may incur additional transfer costs*
 - 📅 **Scheduled Transfers** with due date support
 - 🔔 **Event Notifications** for automation integration
@@ -461,15 +461,15 @@ logger:
 ## Security Notes 🔒
 
 - All authentication uses OAuth 2.0 with BankID (Norwegian national digital ID)
-- Tokens are stored encrypted in Home Assistant
-- No banking credentials are stored in Home Assistant
+- The integration only accesses and transfers funds from and to your own accounts
 - All API calls use HTTPS encryption
-- Integration only accesses and transfers funds to your own accounts
+- Tokens, client_id and client_secret are stored unencrypted in Home Assistant in .storage/auth like any other application credentials managed by Home Assistant - this is the Home Assistant way! The information in the auth-file can be used by anyone to get a fresh access token and transfer money. Understand the implications of this and secure your Home Assistant server and backups.
+- If the integration is used in bad faith, it could cost you money in transfer costs (currency conversions for example), but according to the Sparebank1 APIs it is not be possible to transfer money away from your own accounts.
+- If you suspect a breach, the only safe step is to delete the client from the Sparebank1 developer portal - and the integration and all stored tokens will be rendered useless.
 
 ## Support 💬
 
 - 🐛 **Issues**: [GitHub Issues](https://github.com/remimikalsen/sparebank1_pengerobot/issues)
-- 💡 **Feature Requests**: [GitHub Discussions](https://github.com/remimikalsen/sparebank1_pengerobot/discussions)
 - 📖 **Sparebank1 API**: [Developer Documentation](https://developer.sparebank1.no/)
 
 ## License 📄

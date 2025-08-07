@@ -1,5 +1,5 @@
 """Sensor platform for Sparebank1 Pengerobot."""
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
+from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -11,48 +11,6 @@ from .const import DOMAIN, INTEGRATION_NAME, MANUFACTURER
 from .coordinator import Sparebank1Coordinator
 
 _LOGGER = logging.getLogger(__name__)
-
-
-class BaseSparebank1Sensor(CoordinatorEntity, SensorEntity):
-    """Base class for Sparebank1 sensors with common functionality."""
-    
-    def __init__(self, coordinator: Sparebank1Coordinator, entry: ConfigEntry):
-        """Initialize the base sensor."""
-        super().__init__(coordinator)
-        self.entry = entry
-    
-    @property
-    def device_info(self):
-        """Return the device info."""
-        return {
-            "identifiers": {(DOMAIN, self.entry.entry_id)},
-            "name": f"{INTEGRATION_NAME} {self.entry.data.get(CONF_NAME)}",
-            "manufacturer": MANUFACTURER,
-            "model": INTEGRATION_NAME,
-        }
-    
-    @property
-    def available(self):
-        """Return if entity is available."""
-        # Allow showing stale data for up to 3 hours instead of immediately going unavailable
-        if self.coordinator.data is None:
-            return False
-            
-        # If we have data, check if it's not too stale
-        from datetime import datetime, timedelta
-        last_update_str = self.coordinator.data.get("last_update")
-        if last_update_str:
-            try:
-                last_update = datetime.fromisoformat(last_update_str.replace('Z', '+00:00'))
-                # Allow stale data for up to 3 hours (configurable)
-                max_staleness = timedelta(hours=3)
-                if datetime.utcnow() - last_update.replace(tzinfo=None) < max_staleness:
-                    return True
-            except (ValueError, TypeError):
-                pass
-        
-        # Fall back to coordinator success for truly old/missing data
-        return self.coordinator.last_update_success
 
 
 async def async_setup_entry(
@@ -97,6 +55,56 @@ async def async_setup_entry(
     _handle_coordinator_update()
 
 
+class BaseSparebank1Sensor(CoordinatorEntity, SensorEntity):
+    """Base class for Sparebank1 sensors with common functionality."""
+    
+    def __init__(self, coordinator: Sparebank1Coordinator, entry: ConfigEntry):
+        """Initialize the base sensor."""
+        super().__init__(coordinator)
+        self.entry = entry
+    
+    @property
+    def device_info(self):
+        """Return the device info."""
+        return {
+            "identifiers": {(DOMAIN, self.entry.entry_id)},
+            "name": f"{INTEGRATION_NAME} {self.entry.data.get(CONF_NAME)}",
+            "manufacturer": MANUFACTURER,
+            "model": INTEGRATION_NAME,
+        }
+    
+    @property
+    def available(self):
+        """Return if entity is available."""
+        # Allow showing stale data for up to 3 hours instead of immediately going unavailable
+
+        # If we don't have data, return False on availability immediately
+        if self.coordinator.data is None:
+            _LOGGER.debug("Coordinator says: No data - sensors unavailable")
+            return False
+            
+        
+        # If we have data, check if it's not too stale
+        from datetime import datetime, timedelta
+        last_update_str = self.coordinator.data.get("last_update")
+        _LOGGER.debug("Coordinator says: Last update was: %s", last_update_str)
+        if last_update_str:
+            try:
+                last_update = datetime.fromisoformat(last_update_str.replace('Z', '+00:00'))
+
+                # Allow stale data for up to 3 hours (configurable)
+                max_staleness = timedelta(hours=3)
+                if datetime.utcnow() - last_update.replace(tzinfo=None) < max_staleness:
+                    _LOGGER.debug("Coordinator says: Data is fresh enough")
+                    return True
+                else:
+                    _LOGGER.debug("Coordinator says: Current data is stale, but we return whatever was the success state of the coordinator.")
+            except (ValueError, TypeError):
+                pass
+        
+        # Fall back to coordinator success for truly old/missing data
+        return self.coordinator.last_update_success
+
 class Sparebank1AccountSensor(BaseSparebank1Sensor):
     """Sensor representing Sparebank1 account status."""
     
@@ -106,8 +114,6 @@ class Sparebank1AccountSensor(BaseSparebank1Sensor):
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_accounts"
         self._attr_name = f"{entry.data.get(CONF_NAME)} Accounts"
         self._attr_icon = "mdi:bank"
-        # Account count sensor – counts should not declare state_class to keep history pure
-        # (monetary sensors must not have state_class since 2024.11, and counts work fine without it).
         
     @property
     def native_value(self):
@@ -147,26 +153,6 @@ class Sparebank1AccountSensor(BaseSparebank1Sensor):
         else:
             attributes["balance_fetch_status"] = "success"
         
-        # Add account details (first 5 accounts to avoid overwhelming the state)
-        for i, account in enumerate(accounts[:5]):
-            prefix = f"account_{i+1}"
-            attributes[f"{prefix}_number"] = account.get("accountNumber", "Unknown")
-            attributes[f"{prefix}_name"] = account.get("name", "Unknown")
-            attributes[f"{prefix}_type"] = account.get("description", "Unknown")
-            
-            # Add balance if available
-            if "balance" in account:
-                balance = account["balance"]
-                attributes[f"{prefix}_balance"] = balance.get("amount", 0)
-                attributes[f"{prefix}_currency"] = balance.get("currency", "NOK")
-            
-            # Add other useful info
-            if "bank" in account:
-                attributes[f"{prefix}_bank"] = account["bank"].get("name", "Unknown")
-        
-        if len(accounts) > 5:
-            attributes["note"] = f"Showing first 5 of {len(accounts)} accounts"
-        
         return attributes
 
 
@@ -185,9 +171,7 @@ class Sparebank1AccountBalanceSensor(BaseSparebank1Sensor):
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_account_{account_number}"
         self._attr_name = f"{entry.data.get(CONF_NAME)} {account_name}"
         self._attr_icon = "mdi:bank"
-        # Monetary entities may no longer set state_class starting 2024.11
         self._attr_device_class = SensorDeviceClass.MONETARY
-        # Fixed currency to avoid dynamic unit changes
         self._currency = account.get("balance", {}).get("currency", "NOK")
         
     @property
@@ -203,7 +187,7 @@ class Sparebank1AccountBalanceSensor(BaseSparebank1Sensor):
         account = accounts[self.account_index]
         balance = account.get("balance") or {}
         amount_str = balance.get("amount")
-        # Sparebank1 returns amounts as *strings* – convert to float so HA can store
+        # JSON always returns amounts as *strings* – convert to float so HA can store
         try:
             return float(amount_str) if amount_str is not None else None
         except (ValueError, TypeError):
@@ -232,9 +216,5 @@ class Sparebank1AccountBalanceSensor(BaseSparebank1Sensor):
             "account_type": account.get("description", "Unknown"),
             "integration_id": self.entry.entry_id,
         }
-        
-        # Add bank info if available
-        if "bank" in account:
-            attributes["bank_name"] = account["bank"].get("name", "Unknown")
         
         return attributes

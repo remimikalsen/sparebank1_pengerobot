@@ -23,10 +23,6 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
         self.hass = hass
         self.oauth_session = None
         self.client = None
-
-        # Backoff tracking for repeated authentication failures
-        self._backoff_attempts: int = 0  # How many consecutive auth failures
-        self._backoff_until: datetime | None = None  # Wall-clock time we can retry again
         
         # Rate limit backoff tracking
         self._rate_limit_backoff_until: datetime | None = None
@@ -55,18 +51,10 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
         )
 
         # Create the API client
-        self.client = Sparebank1Client(self.hass, self.entry, self.oauth_session)
+        self.client = Sparebank1Client(self.hass, self.oauth_session)
 
     async def _async_update_data(self):
         """Fetch data from Sparebank1."""
-
-        # Respect any backoff window caused by repeated authentication failures
-        if self._backoff_until and datetime.utcnow() < self._backoff_until:
-            remaining = int((self._backoff_until - datetime.utcnow()).total_seconds())
-            _LOGGER.warning(
-                "Still in backoff period – %s seconds remaining before next attempt", remaining
-            )
-            raise UpdateFailed("Backoff in effect, will retry later")
             
         # Respect rate limit backoff
         if self._rate_limit_backoff_until and datetime.utcnow() < self._rate_limit_backoff_until:
@@ -79,14 +67,13 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
             # Ensure OAuth session and client are initialized
             await self._ensure_client_initialized()
             
-            # Ensure we have a valid token (refreshes automatically if needed)
-            await self.oauth_session.async_ensure_token_valid()
-            
             # Get account information
             accounts = await self.client.get_accounts()
             
             # Filter accounts to only include selected ones
-            selected_account_numbers = self.entry.data.get(CONF_SELECTED_ACCOUNTS, [])
+            # Check options first (from options flow), then fall back to data (from initial config)
+            selected_account_numbers = self.entry.options.get(CONF_SELECTED_ACCOUNTS, self.entry.data.get(CONF_SELECTED_ACCOUNTS, []))
+            _LOGGER.debug("Selected account numbers from config: %s", selected_account_numbers)
             if selected_account_numbers:
                 accounts = [
                     acc for acc in accounts 
@@ -125,10 +112,8 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
                 # Continue with account data without balances - this should not fail the entire update
 
             # Successful fetch – reset all backoff tracking and restore default interval
-            if self._backoff_attempts or self._backoff_until or self._rate_limit_backoff_until:
+            if self._rate_limit_backoff_until:
                 _LOGGER.info("Successful fetch – resetting all backoff counters")
-                self._backoff_attempts = 0
-                self._backoff_until = None
                 self._rate_limit_backoff_until = None
                 if self.update_interval != self._default_update_interval:
                     self.update_interval = self._default_update_interval
@@ -152,6 +137,7 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
             # Extract retry-after seconds from the error message, default to 1 hour
             try:
                 import re
+                # TODO Not sure if the API gives hints about this - something to reverse engineer later
                 match = re.search(r'Retry after (\d+) seconds', str(rate_err))
                 backoff_seconds = int(match.group(1)) if match else 3600
             except (ValueError, AttributeError):
@@ -171,8 +157,6 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
             _LOGGER.error("Unexpected error: %s", err)
             raise UpdateFailed(f"Unexpected error: {err}")
 
-
-
     async def async_transfer_money(self, from_account: str, to_account: str, amount: Decimal | str,
                                  currency: str = "NOK", description: str = "", due_date: str = None) -> dict:
         """Transfer money between accounts."""
@@ -190,6 +174,7 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
             )
             
             # Trigger data refresh to get updated account balances
+            # TODO This can exhause the API rate limits in cases with many accounts, try to only update the affected accounts
             await self.async_request_refresh()
             
             return result

@@ -1,11 +1,5 @@
-"""API helper for Sparebank1 – *lean* version that relies entirely on Home-Assistant's
-built-in OAuth2 session for token handling.
-
-The only job of this class is to:
-1. Fetch a **valid** bearer via ``oauth_session.async_ensure_token_valid()``.
-2. Add the required ``Accept`` header identifying the Sparebank1 API version.
-3. Perform the actual HTTP request and raise a uniform ``Sparebank1APIError``
-   on any non-2xx response.
+"""
+API functions for Sparebank1 Pengerobot
 """
 from __future__ import annotations
 
@@ -14,13 +8,10 @@ from typing import Any, Dict, Optional
 from decimal import Decimal
 
 import aiohttp
-from homeassistant.components.application_credentials import (
-    async_get_application_credentials,
-)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import API_BASE_URL, TRANSFER_ENDPOINT, DOMAIN
+from .const import API_BASE_URL, TRANSFER_ENDPOINT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,38 +42,19 @@ class Sparebank1RateLimitError(Sparebank1APIError):
 class Sparebank1Client:  # pragma: no cover – thin wrapper
     """Tiny async client for the Sparebank1 personal-banking API."""
 
-    def __init__(self, hass, entry, oauth_session) -> None:
+    def __init__(self, hass, oauth_session) -> None:
         self.hass = hass
-        self.entry = entry
         self.oauth_session = oauth_session
         self.session = async_get_clientsession(hass)
-
-        # Will be resolved lazily on first request
-        self._client_id: Optional[str] = None
-        self._client_secret: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
     async def _auth_headers(self) -> Dict[str, str]:
         """Return fully-populated authorization + gateway headers."""
-        token_dict = await self.oauth_session.async_ensure_token_valid()
         
-        # Work-around: HA 2025.7 async_ensure_token_valid() returns None, use session token directly
-        if token_dict is None:
-            token_dict = self.oauth_session.token
-        
-        access_token = token_dict["access_token"]
-
-        # Resolve client-id / secret once and cache them
-        if self._client_id is None or self._client_secret is None:
-            from homeassistant.helpers import config_entry_oauth2_flow
-            
-            impl = await config_entry_oauth2_flow.async_get_config_entry_implementation(
-                self.hass, self.entry
-            )
-            self._client_id = impl.client_id
-            self._client_secret = impl.client_secret
+        await self.oauth_session.async_ensure_token_valid()
+        access_token = self.oauth_session.token["access_token"]
 
         return {
             "Authorization": f"Bearer {access_token}",
@@ -91,7 +63,9 @@ class Sparebank1Client:  # pragma: no cover – thin wrapper
 
     async def _request(self, method: str, url: str, **kwargs: Any) -> Any:
         """Generic HTTP request helper with error handling."""
+
         headers = await self._auth_headers()
+
         # Merge caller-supplied headers if any
         if "headers" in kwargs:
             headers.update(kwargs.pop("headers"))
@@ -156,16 +130,21 @@ class Sparebank1Client:  # pragma: no cover – thin wrapper
     async def get_accounts(self) -> Any:
         """Return a list of the user’s bank accounts."""
         url = f"{API_BASE_URL}/personal/banking/accounts"
-        response = await self._request("GET", url)
-        
-        # Extract accounts from the response structure (same logic as config flow)
-        accounts = []
-        if isinstance(response, dict) and "accounts" in response:
-            accounts = response["accounts"]
-        elif isinstance(response, list):
-            accounts = response
-            
-        return accounts
+
+        params = {
+            "includeNokAccounts": "true",
+            "includeCurrencyAccounts": "true",
+            "includeBsuAccounts": "true",
+            "includeCreditCardAccounts": "false",
+            "includeAskAccounts": "false",
+            "includePensionAccounts": "false"
+        }
+
+        response = await self._request("GET", url, params=params)
+
+        _LOGGER.debug("Response from get_accounts: %s", response)
+
+        return response["accounts"]
     
     async def get_account_balances(self, account_numbers: list[str]) -> dict[str, Any]:
         """Return balances for the provided account numbers.
@@ -178,20 +157,20 @@ class Sparebank1Client:  # pragma: no cover – thin wrapper
         {accountNumber: balance_response}.
         """
         results: dict[str, Any] = {}
-        endpoint_url = f"{API_BASE_URL}/personal/banking/accounts/balance"
+        url = f"{API_BASE_URL}/personal/banking/accounts/balance"
+
+        # Content-Type header is mandatory for this endpoint
+        content_type_header = {
+            "Content-Type": "application/vnd.sparebank1.v1+json; charset=utf-8",
+        }          
         
         for acc_no in account_numbers:
             payload = {"accountNumber": acc_no}
-            # The gateway requires an explicit content-type header in addition to Accept
-            headers = {
-                "Content-Type": "application/vnd.sparebank1.v1+json; charset=utf-8",
-            }
             try:
-                resp = await self._request("POST", endpoint_url, json=payload, headers=headers)
+                resp = await self._request("POST", url, json=payload, headers=content_type_header)
                 results[acc_no] = resp
             except Sparebank1APIError as err:
-                # Log and continue – sensors will fall back to 0 until next refresh
-                _LOGGER.debug("Could not fetch balance for %s: %s", acc_no, err)
+                _LOGGER.error("Could not fetch balance for %s: %s", acc_no, err)
         return results
 
     async def transfer_money(
@@ -222,10 +201,10 @@ class Sparebank1Client:  # pragma: no cover – thin wrapper
         if due_date:
             # The API accepts YYYY-MM-DD directly
             payload["dueDate"] = due_date
-        
-        # Content-Type header is mandatory for this endpoint
-        headers = {
-            "Content-Type": "application/vnd.sparebank1.v1+json; charset=utf-8",
-        }
 
-        return await self._request("POST", url, json=payload, headers=headers)
+        # Content-Type header is mandatory for this endpoint
+        content_type_header = {
+            "Content-Type": "application/vnd.sparebank1.v1+json; charset=utf-8",
+        }            
+
+        return await self._request("POST", url, json=payload, headers=content_type_header)

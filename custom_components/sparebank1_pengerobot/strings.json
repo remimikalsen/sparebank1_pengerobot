@@ -16,6 +16,9 @@
           "max_amount": "Maximum amount for money transfers in the default currency."
         }
       },
+      "default_values": {
+        "name": "My accounts"
+      },
       "reauth_confirm": {
         "title": "Reauthentication required",
         "description": "The Sparebank1 integration needs to re-authenticate your account. Continue to login."
