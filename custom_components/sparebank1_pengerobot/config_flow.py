@@ -166,7 +166,7 @@ class Sparebank1OAuth2FlowHandler(AbstractOAuth2FlowHandler):
             self.hass, self.hass.config.language, "config", DOMAIN
         )
         default_name = translations.get(
-            "config.default_integration_name", 
+            "config.step.integration_config.data.default_integration_name", 
             "My accounts"  # fallback
         )
 

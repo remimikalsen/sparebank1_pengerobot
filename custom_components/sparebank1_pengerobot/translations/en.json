@@ -1,12 +1,12 @@
 {
     "config": {
-      "default_integration_name": "My accounts",
       "step": {
         "integration_config": {
           "title": "Configure Sparebank1 Integration",
           "description": "Set up your integration preferences",
           "data": {
             "name": "Integration Name",
+            "default_integration_name": "My accounts",
             "default_currency": "Default Currency",
             "max_amount": "Maximum Transfer Amount"
           },

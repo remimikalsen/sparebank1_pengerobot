@@ -1,13 +1,13 @@
 {
   "title": "Sparebank1 Pengerobot",
     "config": {
-    "default_integration_name": "My accounts",
     "step": {
       "integration_config": {
         "title": "Configure Sparebank1 Integration",
         "description": "Set up your integration preferences",
         "data": {
           "name": "Integration name",
+          "default_integration_name": "My accounts",
           "default_currency": "Default currency",
           "max_amount": "Maximum transfer amount"
         },

@@ -1,12 +1,12 @@
 {
   "config": {
-    "default_integration_name": "Mine kontoer",
     "step": {
       "integration_config": {
         "title": "Konfigurer Sparebank1-integrasjon",
         "description": "Sett opp dine integrasjonsinnstillinger",
         "data": {
           "name": "Integrasjonsnavn",
+          "default_integration_name": "Mine kontoer",
           "default_currency": "Standardvaluta",
           "max_amount": "Maksimalt overføringsbeløp"
         },
