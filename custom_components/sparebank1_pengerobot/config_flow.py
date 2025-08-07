@@ -161,13 +161,13 @@ class Sparebank1OAuth2FlowHandler(AbstractOAuth2FlowHandler):
             # Now we have OAuth2 data and integration config, proceed to account selection
             return await self.async_step_account_selection()
 
-        # Get localized default name
+        # Get localized default name using translations
         translations = await async_get_translations(
             self.hass, self.hass.config.language, "config", DOMAIN
         )
         default_name = translations.get(
-            "config.step.integration_config.default_values.name",
-            "My accounts"  # fallback if translation is missing
+            "config.default_integration_name", 
+            "My accounts"  # fallback
         )
 
         # Create currency selector

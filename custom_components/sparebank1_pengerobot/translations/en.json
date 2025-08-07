@@ -1,5 +1,6 @@
 {
     "config": {
+      "default_integration_name": "My accounts",
       "step": {
         "integration_config": {
           "title": "Configure Sparebank1 Integration",
@@ -14,9 +15,6 @@
             "default_currency": "Currency code (e.g., NOK, EUR). Choosing other currencies than NOK may incur additional transfer costs.",
             "max_amount": "Maximum amount for money transfers in the default currency."
           }
-        },
-        "default_values": {
-          "name": "My accounts"
         },
         "account_selection": {
           "title": "Select Accounts to Track",

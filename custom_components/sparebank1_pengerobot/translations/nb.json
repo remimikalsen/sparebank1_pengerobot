@@ -1,5 +1,6 @@
 {
   "config": {
+    "default_integration_name": "Mine kontoer",
     "step": {
       "integration_config": {
         "title": "Konfigurer Sparebank1-integrasjon",
@@ -14,9 +15,6 @@
           "default_currency": "Valutakode (f.eks. NOK, EUR). Valg av andre valutaer enn NOK kan medføre ekstra overføringskostnader.",
           "max_amount": "Maksimalt beløp for pengeoverføringer i valgt valuta."
         }
-      },
-      "default_values": {
-        "name": "Mine kontoer"
       },
       "account_selection": {
         "title": "Velg kontoer å følge",
