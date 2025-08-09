@@ -164,8 +164,9 @@ class Sparebank1AccountBalanceSensor(BaseSparebank1Sensor):
         super().__init__(coordinator, entry)
         self.account_data = account
         self.account_index = account_index
+        self.account_number = account.get("accountNumber", f"account_{account_index}")
         
-        account_number = account.get("accountNumber", f"account_{account_index}")
+        account_number = self.account_number
         account_name = account.get("name", f"Account {account_index + 1}")
         
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_account_{account_number}"
@@ -175,16 +176,29 @@ class Sparebank1AccountBalanceSensor(BaseSparebank1Sensor):
         self._currency = account.get("balance", {}).get("currency", "NOK")
         
     @property
+    def available(self):
+        """Return False if this account no longer exists (mark sensor unavailable)."""
+        # If coordinator has no data, fall back to base availability (handles staleness)
+        if self.coordinator.data is None:
+            return False
+        accounts = self.coordinator.data.get("accounts", [])
+        # If the specific account number is no longer present, make entity unavailable
+        exists = any(acc.get("accountNumber") == self.account_number for acc in accounts)
+        if not exists:
+            return False
+        return super().available
+
+    @property
     def native_value(self):
         """Return the account balance."""
         if not self.coordinator.data:
             return None
         
+        # Find the matching account by its stable account number
         accounts = self.coordinator.data.get("accounts", [])
-        if self.account_index >= len(accounts):
+        account = next((acc for acc in accounts if acc.get("accountNumber") == self.account_number), None)
+        if not account:
             return None
-            
-        account = accounts[self.account_index]
         balance = account.get("balance") or {}
         amount_str = balance.get("amount")
         # JSON always returns amounts as *strings* – convert to float so HA can store
@@ -205,10 +219,9 @@ class Sparebank1AccountBalanceSensor(BaseSparebank1Sensor):
             return {}
         
         accounts = self.coordinator.data.get("accounts", [])
-        if self.account_index >= len(accounts):
+        account = next((acc for acc in accounts if acc.get("accountNumber") == self.account_number), None)
+        if not account:
             return {}
-            
-        account = accounts[self.account_index]
         
         attributes = {
             "account_number": account.get("accountNumber", "Unknown"),

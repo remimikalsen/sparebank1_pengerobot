@@ -173,9 +173,12 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
                 due_date=due_date
             )
             
-            # Trigger data refresh to get updated account balances
-            # TODO This can exhause the API rate limits in cases with many accounts, try to only update the affected accounts
-            await self.async_request_refresh()
+            # Refresh only the affected account balances
+            try:
+                await self.async_refresh_account_balances([from_account, to_account])
+            except Exception as _partial_err:  # Fallback to full refresh on any issue
+                _LOGGER.debug("Partial balance refresh failed, falling back to full refresh: %s", _partial_err)
+                await self.async_request_refresh()
             
             return result
             
@@ -185,3 +188,44 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.error("Unexpected error during transfer: %s", err)
             raise Sparebank1APIError(f"Unexpected error: {err}")
+
+    async def async_refresh_account_balances(self, account_numbers: list[str]) -> None:
+        """Refresh balances only for specified account numbers and update coordinator data.
+
+        Falls back to a no-op if coordinator has no existing account list.
+        """
+        if not account_numbers:
+            return
+        # Ensure client
+        await self._ensure_client_initialized()
+        
+        # If we don't have a current dataset, a partial update doesn't make sense
+        if not self.data or "accounts" not in self.data:
+            # Nothing to merge into – do a full refresh instead
+            await self.async_request_refresh()
+            return
+        
+        try:
+            balances = await self.client.get_account_balances(account_numbers)
+        except Exception as err:
+            # Surface error to caller to decide fallback
+            raise err
+        
+        updated_any = False
+        accounts = self.data.get("accounts", [])
+        for acc in accounts:
+            acc_no = acc.get("accountNumber")
+            if acc_no in balances:
+                bal_resp = balances[acc_no]
+                acc["balance"] = {
+                    "amount": bal_resp.get("accountBalance"),
+                    "currency": acc.get("currencyCode", acc.get("balance", {}).get("currency", "NOK")),
+                }
+                updated_any = True
+        
+        if updated_any:
+            # Update the timestamp and notify listeners
+            self.data["last_update"] = datetime.utcnow().isoformat()
+            # Mark that only a subset was refreshed
+            self.data["balance_fetch_partial"] = True
+            self.async_set_updated_data(self.data)

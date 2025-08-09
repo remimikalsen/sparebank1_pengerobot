@@ -347,9 +347,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update."""
-    await hass.config_entries.async_reload(entry.entry_id)
+    """Handle options update without reloading the entire integration."""
 
+    # Normally, one would do this:
+    #       await hass.config_entries.async_reload(entry.entry_id)
+    # but in the Pengerobot case, this causes the _accounts sensor to go unavailable on
+    # refreshing data and changing the number of accounts to follow, so instead we do this:
+
+    try:
+        if entry.entry_id in hass.data.get(DOMAIN, {}):
+            coordinator_data = hass.data[DOMAIN][entry.entry_id]
+            coordinator: Sparebank1Coordinator | None = coordinator_data.get("coordinator")
+
+            # Update stored config snapshot from current options/data
+            updated_config = {
+                CONF_NAME: entry.data.get(CONF_NAME),
+                CONF_MAX_AMOUNT: entry.options.get(CONF_MAX_AMOUNT, entry.data.get(CONF_MAX_AMOUNT, DEFAULT_MAX_AMOUNT)),
+                CONF_DEFAULT_CURRENCY: entry.options.get(CONF_DEFAULT_CURRENCY, entry.data.get(CONF_DEFAULT_CURRENCY, DEFAULT_CURRENCY)),
+            }
+            coordinator_data["config"] = updated_config
+            _LOGGER.debug(
+                "Options updated for entry_id=%s; new config=%s",
+                entry.entry_id,
+                updated_config,
+            )
+
+            # Request a data refresh to apply any selection changes
+            if coordinator:
+                await coordinator.async_request_refresh()
+    except Exception as err:
+        _LOGGER.error("Error handling options update for entry_id=%s: %s", entry.entry_id, err)    
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
