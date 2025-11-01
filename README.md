@@ -11,7 +11,8 @@ A Home Assistant integration that enables secure money transfers between your ow
 ## Features ✨
 
 - 🔐 **Secure OAuth 2.0 Authentication** with Norwegian BankID
-- 💸 **Money Transfers** between your own accounts
+- 💸 **Money Transfers** between your own accounts (debit transfers)
+- 💳 **Credit Card Transfers** - transfer money to credit card accounts
 - 🔄 **Automatic Token Refresh** (365-day lifecycle)
 - 📊 **Account Monitoring** with hourly balance updates (select accounts wisely due to 60/hour API limit)
 - 🌍 **Multi-Currency Support** (NOK, EUR, USD, etc.) - *Note: Non-NOK currencies may incur additional transfer costs*
@@ -111,14 +112,14 @@ After successful authorization, you'll be asked to select which accounts to moni
 
 🎉 **Setup Complete!** Your integration will now:
 - Automatically refresh tokens as needed
-- Monitor your selected accounts hourly  
-- Be ready to process money transfers via the `transfer_debit` service
+- Monitor your selected accounts hourly (including credit card accounts)
+- Be ready to process money transfers via the `transfer_debit` and `transfer_creditcard` services
 
 ## Usage 💰
 
-### Basic Money Transfer
+### Basic Money Transfer (Debit)
 
-Use the `sparebank1_pengerobot.transfer_debit` service to transfer money:
+Use the `sparebank1_pengerobot.transfer_debit` service to transfer money between bank accounts:
 
 ```yaml
 service: sparebank1_pengerobot.transfer_debit
@@ -132,7 +133,29 @@ data:
   due_date: "2024-02-15"             # Schedule for later (optional)
 ```
 
-> ⚠️ **Currency Costs**: Choosing currencies other than NOK may incur additional transfer costs from your bank.
+### Credit Card Transfer
+
+Note! This function is new and untested as I don't have a credit card account at SNN, but it's completely safe to try it out as the Sparebank1 API won't allow transferring money to accounts that aren't your own.
+
+Use the `sparebank1_pengerobot.transfer_creditcard` service to transfer money from a bank account to a credit card account:
+
+```yaml
+service: sparebank1_pengerobot.transfer_creditcard
+data:
+  device_id: "abc123def456"          # Device ID from integration
+  from_account: "sensor.checking_account"   # From bank account sensor entity ID
+  to_account: "sensor.credit_card_account"  # To credit card account sensor entity ID  
+  amount: "1500.00"                   # Amount to transfer (as string)
+  due_date: "2024-02-15"             # Schedule for later (optional, defaults to current date)
+```
+
+> ⚠️ **Credit Card Transfers**: 
+> - Credit card transfers only support transfers TO credit card accounts (paying down credit card debt)
+> - The `to_account` must be a credit card account with an `account_id` attribute
+> - Currency and message fields are not supported for credit card transfers
+> - The amount uses the device's default currency (no currency conversion)
+
+> ⚠️ **Currency Costs**: Choosing currencies other than NOK may incur additional transfer costs from your bank (debit transfers only).
 
 > 💡 **Finding Entity IDs**: Go to **Developer Tools** → **States** and search for your account sensors, or use the entity picker in the service call UI.
 
@@ -182,6 +205,29 @@ automation:
           message: "Automatic savings transfer"
 ```
 
+### In Automations - Credit Card Payment
+
+Automatically pay down credit card debt:
+
+```yaml
+automation:
+  - alias: "Monthly Credit Card Payment"
+    trigger:
+      - platform: time
+        at: "08:00:00"
+    condition:
+      - condition: template
+        value_template: "{{ now().day == 15 }}"  # 15th of each month
+    action:
+      - service: sparebank1_pengerobot.transfer_creditcard
+        data:
+          device_id: "abc123def456"
+          from_account: "sensor.checking_account"
+          to_account: "sensor.credit_card_account"
+          amount: "{{ (states('sensor.credit_card_account') | float * -1) | round(0) }}"
+          due_date: "{{ now().strftime('%Y-%m-%d') }}"
+```
+
 ## Event Notifications 🔔
 
 The integration fires `sparebank1_pengerobot_money_transferred` events after each transfer attempt. Use these for notifications and logging.
@@ -201,9 +247,14 @@ automation:
         data:
           title: "💸 Transfer Successful"
           message: >
-            {{ trigger.event.data.amount }} {{ trigger.event.data.currency }}
-            transferred from {{ trigger.event.data.from_account }}
-            to {{ trigger.event.data.to_account }}
+            {% if trigger.event.data.credit_card_account_id %}
+              {{ trigger.event.data.amount }} transferred from {{ trigger.event.data.from_account }}
+              to credit card {{ trigger.event.data.credit_card_account_id }}
+            {% else %}
+              {{ trigger.event.data.amount }} {{ trigger.event.data.currency }}
+              transferred from {{ trigger.event.data.from_account }}
+              to {{ trigger.event.data.to_account }}
+            {% endif %}
           data:
             priority: high
             color: green
@@ -224,8 +275,13 @@ automation:
         data:
           title: "❌ Transfer Failed"
           message: >
-            Transfer of {{ trigger.event.data.amount }} {{ trigger.event.data.currency }}
-            failed: {{ trigger.event.data.failure_reason }}
+            {% if trigger.event.data.credit_card_account_id %}
+              Transfer of {{ trigger.event.data.amount }} to credit card {{ trigger.event.data.credit_card_account_id }}
+              failed: {{ trigger.event.data.failure_reason }}
+            {% else %}
+              Transfer of {{ trigger.event.data.amount }} {{ trigger.event.data.currency }}
+              failed: {{ trigger.event.data.failure_reason }}
+            {% endif %}
           data:
             priority: high
             color: red
@@ -252,11 +308,18 @@ automation:
           name: "Sparebank1 Transfer"
           message: >
             {% if trigger.event.data.success %}
-              ✅ Successfully transferred {{ trigger.event.data.amount }} {{ trigger.event.data.currency }}
-              from {{ trigger.event.data.from_account }} to {{ trigger.event.data.to_account }}
-              {% if trigger.event.data.description %}({{ trigger.event.data.description }}){% endif %}
+              ✅ Successfully transferred {{ trigger.event.data.amount }}
+              {% if trigger.event.data.currency %}{{ trigger.event.data.currency }}{% endif %}
+              from {{ trigger.event.data.from_account }}
+              {% if trigger.event.data.credit_card_account_id %}
+                to credit card {{ trigger.event.data.credit_card_account_id }}
+              {% else %}
+                to {{ trigger.event.data.to_account }}
+                {% if trigger.event.data.description %}({{ trigger.event.data.description }}){% endif %}
+              {% endif %}
             {% else %}
-              ❌ Failed to transfer {{ trigger.event.data.amount }} {{ trigger.event.data.currency }}:
+              ❌ Failed to transfer {{ trigger.event.data.amount }}
+              {% if trigger.event.data.currency %}{{ trigger.event.data.currency }}{% endif %}:
               {{ trigger.event.data.failure_reason }}
             {% endif %}
 ```
@@ -269,14 +332,24 @@ The `sparebank1_pengerobot_money_transferred` event contains:
 ```yaml
 integration_id: "abc123..."        # Integration instance ID
 name: "My Sparebank1 Account"     # Integration name
-currency: "NOK"                   # Transfer currency
 amount: 500.0                     # Transfer amount
 from_account: "12345678901"       # Source account
-to_account: "10987654321"         # Destination account
-description: "Rent payment"       # Transfer description/message
 success: true                     # Transfer success/failure
 due_date: "2024-02-15"           # Due date (if scheduled)
 result: {...}                    # Full API response data
+```
+
+### Debit Transfer Fields
+```yaml
+currency: "NOK"                   # Transfer currency (debit transfers only)
+to_account: "10987654321"         # Destination account number (debit transfers)
+description: "Rent payment"       # Transfer description/message (debit transfers only)
+```
+
+### Credit Card Transfer Fields
+```yaml
+credit_card_account_id: "1034222"  # Credit card account ID (credit card transfers only)
+# Note: currency and description fields are not present for credit card transfers
 ```
 
 ### Success-Only Fields
@@ -382,7 +455,7 @@ Repeat for each additional OAuth client you want to use.
 When you have multiple integration instances, specify which one to use in your service calls:
 
 ```yaml
-# Instance 1 - Personal account  
+# Instance 1 - Personal account  (debit transfer)
 service: sparebank1_pengerobot.transfer_debit
 data:
   device_id: "personal_device_id"  # Device ID from personal instance
@@ -391,7 +464,7 @@ data:
   amount: "1000"
   message: "Personal savings transfer"
 
-# Instance 2 - Business account
+# Instance 2 - Business account (debit transfer)
 service: sparebank1_pengerobot.transfer_debit  
 data:
   device_id: "business_device_id"  # Device ID from business instance
@@ -399,6 +472,15 @@ data:
   to_account: "sensor.business_savings"
   amount: "5000"
   message: "Business expense transfer"
+
+# Credit card transfer example
+service: sparebank1_pengerobot.transfer_creditcard
+data:
+  device_id: "personal_device_id"
+  from_account: "sensor.personal_checking"
+  to_account: "sensor.personal_credit_card"
+  amount: "3000"
+  due_date: "2024-03-01"
 ```
 
 ### Finding Your Device IDs
@@ -440,7 +522,8 @@ data:
 **Transfer failures**
 - Ensure sufficient funds in source account
 - Verify transfer limits with your bank
-- Verify that the from and to accounts both are accessible by the selected client/device.
+- Verify that the from and to accounts both are accessible by the selected client/device
+- For credit card transfers: Ensure the selected `to_account` is a credit card account with an `account_id` attribute
 
 **"Rate limit exceeded" or API errors**
 - You may be monitoring too many accounts (limit: 60 API calls/hour)

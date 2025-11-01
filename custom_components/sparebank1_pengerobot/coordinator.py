@@ -189,6 +189,36 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
             _LOGGER.error("Unexpected error during transfer: %s", err)
             raise Sparebank1APIError(f"Unexpected error: {err}")
 
+    async def async_transfer_money_creditcard(self, from_account: str, credit_card_account_id: str, amount: Decimal | str,
+                                             due_date: str = None) -> dict:
+        """Transfer money to a credit card account using credit card transfer."""
+        try:
+            # Ensure OAuth session and client are initialized
+            await self._ensure_client_initialized()
+            
+            result = await self.client.transfer_money_creditcard(
+                from_account=from_account,
+                credit_card_account_id=credit_card_account_id,
+                amount=amount,
+                due_date=due_date
+            )
+            
+            # Refresh only the affected account balances (from account)
+            try:
+                await self.async_refresh_account_balances([from_account])
+            except Exception as _partial_err:  # Fallback to full refresh on any issue
+                _LOGGER.debug("Partial balance refresh failed, falling back to full refresh: %s", _partial_err)
+                await self.async_request_refresh()
+            
+            return result
+            
+        except (Sparebank1APIError, Sparebank1RateLimitError) as err:
+            _LOGGER.error("Credit card transfer failed: %s", err)
+            raise
+        except Exception as err:
+            _LOGGER.error("Unexpected error during credit card transfer: %s", err)
+            raise Sparebank1APIError(f"Unexpected error: {err}")
+
     async def async_refresh_account_balances(self, account_numbers: list[str]) -> None:
         """Refresh balances only for specified account numbers and update coordinator data.
 
