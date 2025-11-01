@@ -230,4 +230,12 @@ class Sparebank1AccountBalanceSensor(BaseSparebank1Sensor):
             "integration_id": self.entry.entry_id,
         }
         
+        # Store accountId if present (needed for credit card transfers)
+        if "accountId" in account:
+            attributes["account_id"] = account.get("accountId")
+
+        # The Sparebank API is unclear on how the field will look like, so trying both variants here.
+        if "AccountId" in account:
+            attributes["account_id"] = account.get("AccountId")            
+        
         return attributes

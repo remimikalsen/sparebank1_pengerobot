@@ -11,7 +11,7 @@ import aiohttp
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import API_BASE_URL, TRANSFER_ENDPOINT
+from .const import API_BASE_URL, TRANSFER_ENDPOINT, TRANSFER_CREDITCARD_ENDPOINT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ class Sparebank1Client:  # pragma: no cover – thin wrapper
             "includeNokAccounts": "true",
             "includeCurrencyAccounts": "true",
             "includeBsuAccounts": "true",
-            "includeCreditCardAccounts": "false",
+            "includeCreditCardAccounts": "true",
             "includeAskAccounts": "false",
             "includePensionAccounts": "false"
         }
@@ -198,6 +198,44 @@ class Sparebank1Client:  # pragma: no cover – thin wrapper
         }
         if description:
             payload["message"] = description
+        if due_date:
+            # The API accepts YYYY-MM-DD directly
+            payload["dueDate"] = due_date
+
+        # Content-Type header is mandatory for this endpoint
+        content_type_header = {
+            "Content-Type": "application/vnd.sparebank1.v1+json; charset=utf-8",
+        }            
+
+        return await self._request("POST", url, json=payload, headers=content_type_header)
+
+    async def transfer_money_creditcard(
+        self,
+        from_account: str,
+        credit_card_account_id: str,
+        amount: Decimal | str,
+        due_date: str | None = None,
+    ) -> Any:
+        """Initiate a credit card transfer.
+        
+        Schema matches TransferToCreditCardDTO:
+        - amount: string (required, 0.01 to 999999999)
+        - dueDate: string($date) (optional, defaults to current date)
+        - fromAccount: string (required)
+        - creditCardAccountId: string (required)
+        """
+        url = f"{API_BASE_URL}{TRANSFER_CREDITCARD_ENDPOINT}"
+        
+        # API expects amount as a *decimal string* with two decimals (e.g. "1234.56").
+        from decimal import Decimal, ROUND_HALF_UP
+        amount_decimal = Decimal(str(amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        amount_str = format(amount_decimal, "f")
+        
+        payload: Dict[str, Any] = {
+            "amount": amount_str,
+            "fromAccount": from_account,
+            "creditCardAccountId": credit_card_account_id,
+        }
         if due_date:
             # The API accepts YYYY-MM-DD directly
             payload["dueDate"] = due_date

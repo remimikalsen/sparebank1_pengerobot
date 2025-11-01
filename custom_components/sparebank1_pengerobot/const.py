@@ -23,12 +23,14 @@ OAUTH_BASE_URL = "https://api.sparebank1.no/oauth"
 OAUTH_AUTHORIZE_URL = f"{OAUTH_BASE_URL}/authorize"
 OAUTH_TOKEN_URL = f"{OAUTH_BASE_URL}/token"
 TRANSFER_ENDPOINT = "/personal/banking/transfer/debit"
+TRANSFER_CREDITCARD_ENDPOINT = "/personal/banking/creditcard/transferTo"
 
 # OAuth constants
 OAUTH_REDIRECT_URI = "https://my.home-assistant.io/redirect/oauth"
 
 # Service call constants
 SERVICE_TRANSFER_DEBIT = "transfer_debit"
+SERVICE_TRANSFER_CREDITCARD = "transfer_creditcard"
 ATTR_CURRENCY = "currency"
 ATTR_AMOUNT = "amount"
 ATTR_FROM_ACCOUNT = "from_account"
