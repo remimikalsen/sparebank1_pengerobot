@@ -70,15 +70,38 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
             # Get account information
             accounts = await self.client.get_accounts()
             
+            # Debug: Log full account structure for each account to understand credit card account format
+            _LOGGER.debug("Raw accounts from API (count: %d):", len(accounts))
+            for idx, acc in enumerate(accounts):
+                _LOGGER.debug(
+                    "Account %d structure: keys=%s, accountNumber=%s, accountId=%s, AccountId=%s, name=%s, description=%s",
+                    idx,
+                    list(acc.keys()) if isinstance(acc, dict) else "NOT_A_DICT",
+                    acc.get("accountNumber", "MISSING"),
+                    acc.get("accountId", "MISSING"),
+                    acc.get("AccountId", "MISSING"),
+                    acc.get("name", "MISSING"),
+                    acc.get("description", "MISSING"),
+                )
+            
             # Filter accounts to only include selected ones
             # Check options first (from options flow), then fall back to data (from initial config)
             selected_account_numbers = self.entry.options.get(CONF_SELECTED_ACCOUNTS, self.entry.data.get(CONF_SELECTED_ACCOUNTS, []))
             _LOGGER.debug("Selected account numbers from config: %s", selected_account_numbers)
+            
             if selected_account_numbers:
-                accounts = [
-                    acc for acc in accounts 
-                    if acc.get("accountNumber") in selected_account_numbers
-                ]
+                filtered_accounts = []
+                for acc in accounts:
+                    acc_no = acc.get("accountNumber")
+                    if acc_no in selected_account_numbers:
+                        filtered_accounts.append(acc)
+                    else:
+                        _LOGGER.debug(
+                            "Account filtered out - accountNumber: %s, name: %s",
+                            acc_no,
+                            acc.get("name", "Unknown")
+                        )
+                accounts = filtered_accounts
                 _LOGGER.debug("Filtered to %d selected accounts from config", len(accounts))
             else:
                 _LOGGER.debug("No account selection configured, using all %d accounts", len(accounts))
@@ -88,27 +111,124 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
             balance_fetch_errors = []
             try:
                 # Build list of account numbers we have to look up
-                account_numbers = [
-                    acc["accountNumber"]
-                    for acc in accounts
-                    if "accountNumber" in acc
-                ]
+                # Only include accounts that have accountNumber (credit cards might not support balance endpoint)
+                account_numbers = []
+                accounts_without_accountnumber = []
                 
-                if account_numbers:
-                    balances = await self.client.get_account_balances(account_numbers)
+                for acc in accounts:
+                    acc_no = acc.get("accountNumber")
+                    acc_type = acc.get("type", "")
                     
-                    for acc in accounts:
-                        acc_no = acc["accountNumber"]
-                        if acc_no not in balances:
-                            continue
-                        bal_resp = balances[acc_no]
+                    # Skip credit cards - they have balance already in response and accountNumber starts with 'K' (invalid for balance endpoint)
+                    if acc_type == "CREDITCARD" or (acc_no and acc_no.startswith("K")):
+                        accounts_without_accountnumber.append({
+                            "name": acc.get("name", "Unknown"),
+                            "type": acc_type,
+                            "accountNumber": acc_no,
+                            "reason": "Credit card - balance already in response or invalid accountNumber"
+                        })
+                        _LOGGER.debug(
+                            "Skipping balance fetch for credit card account - name: %s, accountNumber: %s, type: %s",
+                            acc.get("name", "Unknown"),
+                            acc_no,
+                            acc_type
+                        )
+                        continue
+                    
+                    if acc_no:
+                        account_numbers.append(acc_no)
+                    else:
+                        accounts_without_accountnumber.append({
+                            "name": acc.get("name", "Unknown"),
+                            "keys": list(acc.keys()) if isinstance(acc, dict) else "NOT_A_DICT"
+                        })
+                        _LOGGER.debug(
+                            "Skipping balance fetch for account without accountNumber - name: %s, keys: %s",
+                            acc.get("name", "Unknown"),
+                            list(acc.keys()) if isinstance(acc, dict) else "NOT_A_DICT"
+                        )
+                
+                if accounts_without_accountnumber:
+                    _LOGGER.warning(
+                        "Found %d account(s) without accountNumber field - these may be credit card accounts that don't support balance endpoint: %s",
+                        len(accounts_without_accountnumber),
+                        accounts_without_accountnumber
+                    )
+                
+                # First, handle accounts that already have balance in the response (like credit cards)
+                # Credit cards have balance as a float directly in the response
+                for acc in accounts:
+                    acc_no = acc.get("accountNumber")
+                    acc_type = acc.get("type", "")
+                    
+                    # Check if account already has balance data (credit cards have it directly)
+                    if "balance" in acc and isinstance(acc.get("balance"), (int, float)):
+                        balance_float = acc.get("balance")
+                        available_balance = acc.get("availableBalance", balance_float)
+                        
+                        # Convert to our internal format
                         acc["balance"] = {
-                            "amount": bal_resp["accountBalance"],
+                            "amount": str(balance_float),  # Store as string like API does
                             "currency": acc.get("currencyCode", "NOK"),
                         }
+                        _LOGGER.debug(
+                            "Account %s (type: %s) already has balance data in response: %s %s",
+                            acc_no,
+                            acc_type,
+                            balance_float,
+                            acc.get("currencyCode", "NOK")
+                        )
+                        
+                        # Remove from account_numbers list if it was there (don't fetch again)
+                        if acc_no in account_numbers:
+                            account_numbers.remove(acc_no)
+                            _LOGGER.debug("Skipping balance fetch for account %s - already has balance data", acc_no)
+                
+                # Now fetch balances for accounts that don't have it yet
+                if account_numbers:
+                    _LOGGER.debug("Attempting to fetch balances for %d accounts: %s", len(account_numbers), account_numbers)
+                    balances = await self.client.get_account_balances(account_numbers)
+                    _LOGGER.debug("Balance fetch completed - got balances for %d accounts", len(balances))
+                    
+                    for acc in accounts:
+                        acc_no = acc.get("accountNumber")
+                        if not acc_no or acc_no not in account_numbers:
+                            # Skip accounts without accountNumber or already processed
+                            continue
+                            
+                        if acc_no not in balances:
+                            _LOGGER.debug(
+                                "No balance data returned for account %s (name: %s) - balance endpoint may not support this account type",
+                                acc_no,
+                                acc.get("name", "Unknown")
+                            )
+                            continue
+                            
+                        bal_resp = balances[acc_no]
+                        _LOGGER.debug(
+                            "Balance response for account %s: %s",
+                            acc_no,
+                            bal_resp
+                        )
+                        
+                        # Check if accountBalance exists in response
+                        if "accountBalance" in bal_resp:
+                            acc["balance"] = {
+                                "amount": bal_resp["accountBalance"],
+                                "currency": acc.get("currencyCode", "NOK"),
+                            }
+                        else:
+                            _LOGGER.warning(
+                                "Balance response for account %s missing 'accountBalance' field. Response keys: %s, Response: %s",
+                                acc_no,
+                                list(bal_resp.keys()) if isinstance(bal_resp, dict) else "NOT_A_DICT",
+                                bal_resp
+                            )
+                else:
+                    _LOGGER.warning("No accounts with accountNumber found - cannot fetch any balances")
             except Exception as err:  # noqa: BLE001 – non-fatal, we just log and continue
                 balance_fetch_errors.append(str(err))
-                _LOGGER.warning("Could not fetch account balances: %s", err)
+                _LOGGER.warning("Could not fetch account balances: %s", err, exc_info=True)
                 # Continue with account data without balances - this should not fail the entire update
 
             # Successful fetch – reset all backoff tracking and restore default interval

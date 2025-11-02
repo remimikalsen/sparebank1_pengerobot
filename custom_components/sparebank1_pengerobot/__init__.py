@@ -409,13 +409,48 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         from_account = from_account_state.attributes.get("account_number")
         
         # Extract creditCardAccountId from the to_account entity (this is the credit card account)
-        credit_card_account_id = to_account_state.attributes.get("account_id")
+        # Only use credit_card_account_id attribute - no fallbacks to other fields
+        credit_card_account_id = to_account_state.attributes.get("credit_card_account_id")
+        
+        _LOGGER.debug(
+            "Credit card transfer - from_account: %s, to_account_entity: %s, credit_card_account_id: %s (from attributes: %s)",
+            from_account,
+            to_account_entity,
+            credit_card_account_id,
+            {
+                "credit_card_account_id": to_account_state.attributes.get("credit_card_account_id"),
+                "account_number": to_account_state.attributes.get("account_number"),
+                "account_name": to_account_state.attributes.get("account_name"),
+                "all_attributes": dict(to_account_state.attributes)
+            }
+        )
         
         if not from_account:
             raise HomeAssistantError("Could not extract account number from selected from account entity")
         
         if not credit_card_account_id:
-            raise HomeAssistantError("Could not extract credit card account ID from selected credit card account entity. Make sure you selected a credit card account.")
+            # Try to get it directly from coordinator data as fallback
+            if coordinator and coordinator.data and "accounts" in coordinator.data:
+                accounts = coordinator.data["accounts"]
+                to_account_number = to_account_state.attributes.get("account_number")
+                for acc in accounts:
+                    if acc.get("accountNumber") == to_account_number:
+                        credit_card_account_id = acc.get("creditCardAccountID")
+                        if credit_card_account_id:
+                            _LOGGER.debug(
+                                "Found creditCardAccountID in coordinator data: %s for account %s",
+                                credit_card_account_id,
+                                to_account_number
+                            )
+                            break
+            
+            if not credit_card_account_id:
+                raise HomeAssistantError(
+                    f"Could not extract credit card account ID from selected credit card account entity. "
+                    f"Entity: {to_account_entity}, Attributes: {dict(to_account_state.attributes)}. "
+                    f"The selected account must have a 'credit_card_account_id' attribute (from creditCardAccountID field). "
+                    f"Make sure you selected a credit card account."
+                )
 
         # Validate amount against device limits (credit card transfers don't use currency conversion)
         max_amount = coordinator_data["config"].get(CONF_MAX_AMOUNT, DEFAULT_MAX_AMOUNT)

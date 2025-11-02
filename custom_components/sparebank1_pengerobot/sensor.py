@@ -38,12 +38,24 @@ async def async_setup_entry(
             return
         new_entities: list[Sparebank1AccountBalanceSensor] = []
         for idx, acc in enumerate(coordinator.data["accounts"]):
-            acc_number = acc.get("accountNumber", f"account_{idx}")
+            # Use same logic as sensor initialization to determine account identifier
+            acc_number = acc.get("accountNumber") or acc.get("creditCardAccountID") or acc.get("accountId") or acc.get("AccountId") or f"account_{idx}"
             uniq = f"{DOMAIN}_{entry.entry_id}_account_{acc_number}"
             if uniq in added_accounts:
                 continue
-            new_entities.append(Sparebank1AccountBalanceSensor(coordinator, entry, acc, idx))
-            added_accounts.add(uniq)
+            try:
+                new_entities.append(Sparebank1AccountBalanceSensor(coordinator, entry, acc, idx))
+                added_accounts.add(uniq)
+            except Exception as err:
+                _LOGGER.error(
+                    "Failed to create sensor for account %d (accountNumber: %s, accountId: %s, AccountId: %s): %s",
+                    idx,
+                    acc.get("accountNumber"),
+                    acc.get("accountId"),
+                    acc.get("AccountId"),
+                    err,
+                    exc_info=True
+                )
         if new_entities:
             # True → call update() immediately for fresh state
             async_add_entities(new_entities, True)
@@ -164,7 +176,19 @@ class Sparebank1AccountBalanceSensor(BaseSparebank1Sensor):
         super().__init__(coordinator, entry)
         self.account_data = account
         self.account_index = account_index
-        self.account_number = account.get("accountNumber", f"account_{account_index}")
+        
+        # Get account number - credit cards have accountNumber but it might be invalid for balance endpoint
+        # Credit card format: 'K1879940508' (starts with 'K')
+        self.account_number = account.get("accountNumber")
+        if not self.account_number:
+            # Fallback to creditCardAccountID if accountNumber is missing
+            self.account_number = account.get("creditCardAccountID") or account.get("accountId") or account.get("AccountId") or f"account_{account_index}"
+            _LOGGER.debug(
+                "Account %d has no accountNumber. Using fallback: %s. Account keys: %s",
+                account_index,
+                self.account_number,
+                list(account.keys()) if isinstance(account, dict) else "NOT_A_DICT"
+            )
         
         account_number = self.account_number
         account_name = account.get("name", f"Account {account_index + 1}")
@@ -173,19 +197,60 @@ class Sparebank1AccountBalanceSensor(BaseSparebank1Sensor):
         self._attr_name = f"{entry.data.get(CONF_NAME)} {account_name}"
         self._attr_icon = "mdi:bank"
         self._attr_device_class = SensorDeviceClass.MONETARY
-        self._currency = account.get("balance", {}).get("currency", "NOK")
+        
+        # Handle balance - API returns balance as float in accounts response for credit cards
+        # For other accounts, balance might be fetched separately and stored as dict
+        # Use currencyCode from account (always present)
+        self._currency = account.get("currencyCode", "NOK")
+        
+        # Check if balance already exists in account data (from API response)
+        balance = account.get("balance")
+        if balance is None:
+            # Balance will be set later when fetched
+            _LOGGER.debug(
+                "Account %s has no balance data yet. Type: %s. Balance will be fetched or set later.",
+                account_number,
+                account.get("type", "UNKNOWN")
+            )
         
     @property
     def available(self):
-        """Return False if this account no longer exists (mark sensor unavailable)."""
+        """Return False if this account no longer exists or has no balance data (mark sensor unavailable)."""
         # If coordinator has no data, fall back to base availability (handles staleness)
         if self.coordinator.data is None:
             return False
         accounts = self.coordinator.data.get("accounts", [])
         # If the specific account number is no longer present, make entity unavailable
-        exists = any(acc.get("accountNumber") == self.account_number for acc in accounts)
-        if not exists:
+        # Check accountNumber, creditCardAccountID, accountId, or AccountId
+        account = None
+        for acc in accounts:
+            if (acc.get("accountNumber") == self.account_number or
+                acc.get("creditCardAccountID") == self.account_number or
+                acc.get("accountId") == self.account_number or
+                acc.get("AccountId") == self.account_number):
+                account = acc
+                break
+                
+        if not account:
+            _LOGGER.debug(
+                "Account %s no longer exists in coordinator data. Available accounts: %s",
+                self.account_number,
+                [(acc.get("accountNumber"), acc.get("creditCardAccountID"), acc.get("accountId"), acc.get("AccountId")) for acc in accounts]
+            )
             return False
+            
+        # For sensors, we need balance data to be available
+        # If account exists but has no balance (e.g., credit card that failed balance fetch), mark unavailable
+        balance = account.get("balance")
+        if not balance or not isinstance(balance, dict) or "amount" not in balance:
+            _LOGGER.debug(
+                "Account %s exists but has no valid balance data. Balance: %s (type: %s). Marking sensor unavailable.",
+                self.account_number,
+                balance,
+                type(balance)
+            )
+            return False
+            
         return super().available
 
     @property
@@ -194,17 +259,51 @@ class Sparebank1AccountBalanceSensor(BaseSparebank1Sensor):
         if not self.coordinator.data:
             return None
         
-        # Find the matching account by its stable account number
+        # Find the matching account by its stable account number, creditCardAccountID, accountId, or AccountId
         accounts = self.coordinator.data.get("accounts", [])
-        account = next((acc for acc in accounts if acc.get("accountNumber") == self.account_number), None)
+        # Find account by accountNumber, creditCardAccountID, accountId, or AccountId
+        account = None
+        for acc in accounts:
+            if (acc.get("accountNumber") == self.account_number or
+                acc.get("creditCardAccountID") == self.account_number or
+                acc.get("accountId") == self.account_number or
+                acc.get("AccountId") == self.account_number):
+                account = acc
+                break
+                
         if not account:
+            _LOGGER.debug(
+                "Account %s not found when getting balance. Available accounts: accountNumbers=%s, creditCardAccountIDs=%s, accountIds=%s, AccountIds=%s",
+                self.account_number,
+                [acc.get("accountNumber") for acc in accounts],
+                [acc.get("creditCardAccountID") for acc in accounts],
+                [acc.get("accountId") for acc in accounts],
+                [acc.get("AccountId") for acc in accounts]
+            )
             return None
-        balance = account.get("balance") or {}
+            
+        balance = account.get("balance")
+        if not balance:
+            _LOGGER.debug(
+                "Account %s has no balance data. Account keys: %s, Account: %s",
+                self.account_number,
+                list(account.keys()) if isinstance(account, dict) else "NOT_A_DICT",
+                account
+            )
+            return None
+            
         amount_str = balance.get("amount")
         # JSON always returns amounts as *strings* – convert to float so HA can store
         try:
             return float(amount_str) if amount_str is not None else None
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as e:
+            _LOGGER.warning(
+                "Could not convert balance amount to float for account %s. amount_str: %s, type: %s, error: %s",
+                self.account_number,
+                amount_str,
+                type(amount_str),
+                e
+            )
             return None
     
     @property
@@ -219,9 +318,35 @@ class Sparebank1AccountBalanceSensor(BaseSparebank1Sensor):
             return {}
         
         accounts = self.coordinator.data.get("accounts", [])
-        account = next((acc for acc in accounts if acc.get("accountNumber") == self.account_number), None)
+        # Find account by accountNumber, accountId, or AccountId (for credit cards)
+        account = None
+        for acc in accounts:
+            if (acc.get("accountNumber") == self.account_number or
+                acc.get("accountId") == self.account_number or
+                acc.get("AccountId") == self.account_number):
+                account = acc
+                break
+                
         if not account:
+            _LOGGER.debug(
+                "Account %s not found in coordinator data. Available accounts: accountNumbers=%s, creditCardAccountIDs=%s, accountIds=%s, AccountIds=%s",
+                self.account_number,
+                [acc.get("accountNumber") for acc in accounts],
+                [acc.get("creditCardAccountID") for acc in accounts],
+                [acc.get("accountId") for acc in accounts],
+                [acc.get("AccountId") for acc in accounts]
+            )
             return {}
+        
+        # Debug: Log account structure to help debug credit card account issues
+        _LOGGER.debug(
+            "Building attributes for account %s. Account keys: %s, has balance: %s, has accountId: %s, has AccountId: %s",
+            self.account_number,
+            list(account.keys()) if isinstance(account, dict) else "NOT_A_DICT",
+            "balance" in account,
+            "accountId" in account,
+            "AccountId" in account
+        )
         
         attributes = {
             "account_number": account.get("accountNumber", "Unknown"),
@@ -230,12 +355,14 @@ class Sparebank1AccountBalanceSensor(BaseSparebank1Sensor):
             "integration_id": self.entry.entry_id,
         }
         
-        # Store accountId if present (needed for credit card transfers)
-        if "accountId" in account:
-            attributes["account_id"] = account.get("accountId")
-
-        # The Sparebank API is unclear on how the field will look like, so trying both variants here.
-        if "AccountId" in account:
-            attributes["account_id"] = account.get("AccountId")            
+        # Store creditCardAccountID for credit card transfers (this is the correct field name)
+        # Only store creditCardAccountID - this is the only ID field we use for credit card transfers
+        if "creditCardAccountID" in account:
+            attributes["credit_card_account_id"] = account.get("creditCardAccountID")
+            _LOGGER.debug(
+                "Account %s is a credit card with creditCardAccountID: %s",
+                self.account_number,
+                account.get("creditCardAccountID")
+            )
         
         return attributes

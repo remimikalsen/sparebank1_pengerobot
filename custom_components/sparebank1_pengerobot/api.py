@@ -167,10 +167,27 @@ class Sparebank1Client:  # pragma: no cover – thin wrapper
         for acc_no in account_numbers:
             payload = {"accountNumber": acc_no}
             try:
+                _LOGGER.debug("Fetching balance for account %s", acc_no)
                 resp = await self._request("POST", url, json=payload, headers=content_type_header)
+                _LOGGER.debug("Balance response for account %s: %s", acc_no, resp)
                 results[acc_no] = resp
             except Sparebank1APIError as err:
-                _LOGGER.error("Could not fetch balance for %s: %s", acc_no, err)
+                _LOGGER.error(
+                    "Could not fetch balance for account %s - HTTP %s: %s. Error codes: %s",
+                    acc_no,
+                    getattr(err, 'http_code', 'unknown'),
+                    err,
+                    getattr(err, 'error_codes', [])
+                )
+                # Continue to next account - don't fail the entire operation
+            except Exception as err:
+                _LOGGER.error(
+                    "Unexpected error fetching balance for account %s: %s",
+                    acc_no,
+                    err,
+                    exc_info=True
+                )
+                # Continue to next account - don't fail the entire operation
         return results
 
     async def transfer_money(
@@ -224,7 +241,19 @@ class Sparebank1Client:  # pragma: no cover – thin wrapper
         - fromAccount: string (required)
         - creditCardAccountId: string (required)
         """
+        # API docs show endpoint as /creditcard/transferTo
+        # Try the standard path structure first, but if it fails, we may need to adjust
+        # Since debit is at /personal/banking/transfer/debit, credit card might be at /personal/banking/creditcard/transferTo
+        # But the 404 suggests it might be /personal/creditcard/transferTo or just /creditcard/transferTo
         url = f"{API_BASE_URL}{TRANSFER_CREDITCARD_ENDPOINT}"
+        
+        _LOGGER.debug(
+            "Attempting credit card transfer to endpoint: %s with fromAccount: %s, creditCardAccountId: %s, amount: %s",
+            url,
+            from_account,
+            credit_card_account_id,
+            amount
+        )
         
         # API expects amount as a *decimal string* with two decimals (e.g. "1234.56").
         from decimal import Decimal, ROUND_HALF_UP
@@ -239,6 +268,8 @@ class Sparebank1Client:  # pragma: no cover – thin wrapper
         if due_date:
             # The API accepts YYYY-MM-DD directly
             payload["dueDate"] = due_date
+
+        _LOGGER.debug("Credit card transfer payload: %s", payload)
 
         # Content-Type header is mandatory for this endpoint
         content_type_header = {
