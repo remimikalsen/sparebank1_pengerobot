@@ -36,7 +36,7 @@
       },
       "pick_implementation_forced": {
         "title": "Velg SNN-klient påloggingsopplysninger",
-        "description": "Du må legge til klientpåloggingsopplysninger i Home Assistant. Først må du besøke https://developer.sparebank1.no/#/documentation/gettingstarted for å få påloggingsopplysningene fra Sparebank1. Legg de deretter til her.",
+        "description": "Du må legge til klientpåloggingsopplysninger i Home Assistant. Se integrasjonens README for hvordan du får påloggingsopplysninger fra Sparebank1. Legg de deretter til her.",
         "data": {
           "create_new_credentials": "➕ Legg til påloggingsopplysninger (vær tålmodig, det kan ta litt tid)…"
         }
