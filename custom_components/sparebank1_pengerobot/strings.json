@@ -37,7 +37,7 @@
       },
       "pick_implementation_forced": {
         "title": "Select SNN client credentials",
-        "description": "You need to add client credentials to Home Assistant. First, visit https://developer.sparebank1.no/#/documentation/gettingstarted to get the credentials from Sparebank1. Then add them here.",
+        "description": "You need to add client credentials to Home Assistant. See the integration README for how to get credentials from Sparebank1. Then add them here.",
         "data": {
           "create_new_credentials": "➕ Add new credentials (be patient, it can take a while)…"
         }
@@ -116,6 +116,6 @@
     }
   },
   "application_credentials": {
-    "description": "Enter your Sparebank1 client credentials. You need to create an OAuth client at https://developer.sparebank1.no/#/documentation/gettingstarted first."
+    "description": "Enter your Sparebank1 client credentials. See the integration README for how to create an OAuth client first."
   }
 }
