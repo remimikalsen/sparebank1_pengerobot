@@ -3,13 +3,14 @@ import logging
 from datetime import timedelta, datetime
 from decimal import Decimal
 
+from aiohttp import ClientResponseError
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_entry_oauth2_flow
 
 from .api import Sparebank1Client, Sparebank1APIError, Sparebank1RateLimitError
-from .const import DOMAIN, CONF_SELECTED_ACCOUNTS
+from .const import DOMAIN, CONF_SELECTED_ACCOUNTS, OAUTH_TOKEN_URL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,6 +30,9 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
 
         # Store the default update interval so we can restore it after a success
         self._default_update_interval = timedelta(hours=1)
+
+        # Avoid spamming the reauth repair flow when token refresh keeps failing
+        self._oauth_reauth_requested: bool = False
 
         super().__init__(
             hass,
@@ -225,7 +229,12 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
                                 bal_resp
                             )
                 else:
-                    _LOGGER.warning("No accounts with accountNumber found - cannot fetch any balances")
+                    # Empty list is normal when every account gets balance from the accounts
+                    # response (e.g. credit cards) or only credit-card / no-accountNumber
+                    # accounts are present — not an error.
+                    _LOGGER.debug(
+                        "No balance endpoint fetch needed (credit-card-only, inline balances, or no debit accounts to query)"
+                    )
             except Exception as err:  # noqa: BLE001 – non-fatal, we just log and continue
                 balance_fetch_errors.append(str(err))
                 _LOGGER.warning("Could not fetch account balances: %s", err, exc_info=True)
@@ -249,7 +258,8 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
                 data["balance_fetch_partial"] = True
             else:
                 data["balance_fetch_partial"] = False
-                
+
+            self._oauth_reauth_requested = False
             return data
             
         except Sparebank1RateLimitError as rate_err:
@@ -273,6 +283,23 @@ class Sparebank1Coordinator(DataUpdateCoordinator):
         except Sparebank1APIError as api_err:
             _LOGGER.error("API error: %s", api_err)
             raise UpdateFailed(f"API error: {api_err}")
+        except ClientResponseError as err:
+            # OAuth2Session raises this when POST /oauth/token fails (e.g. invalid_grant, expired refresh)
+            err_text = str(err)
+            if err.status in (400, 401) and OAUTH_TOKEN_URL in err_text:
+                _LOGGER.error(
+                    "OAuth token refresh failed (%s). Sparebank1 rejected the refresh — "
+                    "open the integration and complete re-authentication, or verify Application Credentials.",
+                    err.status,
+                )
+                if not self._oauth_reauth_requested:
+                    self._oauth_reauth_requested = True
+                    self.entry.async_start_reauth(self.hass)
+                raise UpdateFailed(
+                    "OAuth token refresh failed; re-authentication required"
+                ) from err
+            _LOGGER.error("HTTP error: %s", err)
+            raise UpdateFailed(f"HTTP error: {err}") from err
         except Exception as err:
             _LOGGER.error("Unexpected error: %s", err)
             raise UpdateFailed(f"Unexpected error: {err}")

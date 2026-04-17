@@ -333,10 +333,18 @@ class Sparebank1OAuth2FlowHandler(AbstractOAuth2FlowHandler):
             
             client = Sparebank1Client(self.hass, oauth_session)
             accounts = await client.get_accounts()
-            
+
             if isinstance(accounts, list) and accounts:
-                account_number = accounts[0].get("accountNumber")
-                return str(account_number) if account_number else None
+                # The Sparebank1 API does not guarantee a stable ordering, so we
+                # pick the lexicographically smallest accountNumber to make the
+                # unique_id deterministic across re-auth / reconfigure flows.
+                numbers = sorted(
+                    str(a.get("accountNumber"))
+                    for a in accounts
+                    if a.get("accountNumber")
+                )
+                if numbers:
+                    return numbers[0]
 
         except Exception as err:  # broad – fallback to no unique_id
             _LOGGER.debug("Could not determine unique ID: %s", err)
@@ -384,16 +392,52 @@ class Sparebank1OAuth2FlowHandler(AbstractOAuth2FlowHandler):
 
         base_uid = str(unique_id)
         scoped_uid = f"{base_uid}::{auth_impl}" if auth_impl else base_uid
-        
+
         _LOGGER.debug("Creating entry with base_uid=%s, auth_impl=%s, scoped_uid=%s", base_uid, auth_impl, scoped_uid)
 
-        # Always use the scoped unique ID
-        await self.async_set_unique_id(scoped_uid)
-        if self.source == SOURCE_REAUTH:
-            self._abort_if_unique_id_mismatch()
-        elif self.source == SOURCE_RECONFIGURE:
-            self._abort_if_unique_id_mismatch()
+        # For reauth / reconfigure we must not compare strictly against the
+        # newly computed scoped_uid, because:
+        #  * the Sparebank1 API can return accounts in a different order, so an
+        #    older entry may have been created with a different base account
+        #    number than is "first" today;
+        #  * some older entries may have been stored with an unscoped uid.
+        # Instead, verify the user is the same by checking that the existing
+        # entry's base account number is still present among the authenticated
+        # user's accounts. If so, keep the existing unique_id as-is.
+        if self.source in (SOURCE_REAUTH, SOURCE_RECONFIGURE):
+            existing_entry = (
+                self._get_reauth_entry()
+                if self.source == SOURCE_REAUTH
+                else self._get_reconfigure_entry()
+            )
+            existing_uid = existing_entry.unique_id or ""
+            existing_base = existing_uid.split("::", 1)[0]
+            available_numbers = {
+                str(a.get("accountNumber"))
+                for a in (self._available_accounts or [])
+                if a.get("accountNumber")
+            }
+
+            if existing_base and existing_base in available_numbers:
+                # Same user – reuse the existing unique_id so HA does not
+                # flag this as a mismatch.
+                _LOGGER.debug(
+                    "Reauth/reconfigure: existing base account %s still present; reusing existing unique_id %s",
+                    existing_base,
+                    existing_uid,
+                )
+                await self.async_set_unique_id(existing_uid)
+            else:
+                _LOGGER.warning(
+                    "Reauth/reconfigure: existing base account %s not found in authenticated accounts %s; treating as mismatch",
+                    existing_base,
+                    sorted(available_numbers),
+                )
+                await self.async_set_unique_id(scoped_uid)
+                self._abort_if_unique_id_mismatch()
         else:
+            # New setup – use the scoped unique ID
+            await self.async_set_unique_id(scoped_uid)
             # For new setups, check if this exact scoped unique ID is already configured
             # If it is, that means the user is trying to set up the same credentials again
             existing_entry = None
